@@ -1,5 +1,12 @@
+# Use either the Zephyr-provided module dir or fallback to current source dir
+if(ZEPHYR_SHARED_ZEPHLET_MODULE_DIR)
+    set(SHARED_ZEPHLET_DIR "${ZEPHYR_SHARED_ZEPHLET_MODULE_DIR}")
+else()
+    set(SHARED_ZEPHLET_DIR "${CMAKE_CURRENT_SOURCE_DIR}")
+endif()
+
 # Zephlet codegen setup - loaded first so all zephlets can use it
-list(APPEND CMAKE_MODULE_PATH "${ZEPHYR_SHARED_ZEPHLET_MODULE_DIR}/codegen")
+list(APPEND CMAKE_MODULE_PATH "${SHARED_ZEPHLET_DIR}/codegen")
 include(zephyr_zephlet_codegen)
 
 # Find Python for zephlet code generation
@@ -13,27 +20,26 @@ execute_process(
     OUTPUT_QUIET ERROR_QUIET
 )
 if(NOT PKG_CHECK EQUAL 0)
-    message(FATAL_ERROR "Missing Python packages. Install: pip install -r ${ZEPHYR_SHARED_ZEPHLET_MODULE_DIR}/codegen/requirements.txt")
+    message(FATAL_ERROR "Missing Python packages. Install: pip install -r ${SHARED_ZEPHLET_DIR}/codegen/requirements.txt")
 endif()
 
-if(CONFIG_ZEPHLETS)
-    set_property(
-        GLOBAL
-        APPEND
-        PROPERTY
-        PROTO_FILES_LIST
-        "${ZEPHYR_SHARED_ZEPHLET_MODULE_DIR}/zephlet.proto"
-    )
-    message(WARNING "Shared Zephlet Proto File Added: ${ZEPHYR_SHARED_ZEPHLET_MODULE_DIR}/zephlet.proto")
+# Always add proto file to list (needed before CONFIG variables are available)
+set_property(
+    GLOBAL
+    APPEND
+    PROPERTY
+    PROTO_FILES_LIST
+    "${SHARED_ZEPHLET_DIR}/zephlet.proto"
+)
 
+if(CONFIG_ZEPHLETS)
     zephyr_library()
-    zephyr_library_sources("${ZEPHYR_SHARED_ZEPHLET_MODULE_DIR}/zephlet.c")
+    zephyr_library_sources("${SHARED_ZEPHLET_DIR}/zephlet.c")
     zephyr_include_directories(.)
     zephyr_linker_sources(DATA_SECTIONS zephlet_iterables.ld)
 
     # Expose nanopb parent directory globally (all .pb.h files)
     zephyr_include_directories("${CMAKE_BINARY_DIR}/zephlets")
-    # Expose shared zephlet build directory for zephlet.pb.h
-    zephyr_include_directories("${CMAKE_BINARY_DIR}/zephlets/shared")
-
+    # Expose build root for zephlet.pb.h (generated at root due to RELPATH)
+    zephyr_include_directories("${CMAKE_BINARY_DIR}")
 endif()
