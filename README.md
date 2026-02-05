@@ -9,12 +9,14 @@ Reusable zephlet infrastructure for Zephyr RTOS implementing Ports & Adapters pa
 ```yaml
 projects:
   - name: zephlet
-    url: https://github.com/<org>/zephlet
+    url: https://github.com/rodrigopex/zephlet
     revision: main
     path: modules/lib/zephlet
 ```
 
 ### Install dependencies
+
+Explicitly install required Python packages:
 
 ```bash
 pip install -r modules/lib/zephlet/codegen/requirements.txt
@@ -25,6 +27,8 @@ pip install -r modules/lib/zephlet/codegen/requirements.txt
 ```bash
 west zephlet new -n MyZephlet -d "Description" -a "Author"
 ```
+
+Edit your `.proto` file to define Config/Events/RPCs, then run `just b` to bootstrap the `.c` file (auto-generated once if missing via `--impl-only`). After bootstrap, implement TODOs in the `.c` file manually (never overwritten). Add to root `CMakeLists.txt` `EXTRA_ZEPHYR_MODULES`, enable `CONFIG_ZEPHLET_<ZEPHLET>=y`, rebuild.
 
 ## Configuration
 
@@ -44,6 +48,7 @@ Default: `workspace_root/adapters/`
 ## Architecture
 
 **Two-channel pattern** per zephlet:
+
 - `chan_<zephlet>_invoke`: Receives commands (START/STOP/CONFIG/etc)
 - `chan_<zephlet>_report`: Publishes status/events
 
@@ -53,9 +58,43 @@ Default: `workspace_root/adapters/`
 
 ## West Commands
 
-- `west zephlet new [-n NAME] [-d DESC] [-a AUTHOR]` - Create zephlet (interactive if no args)
-- `west zephlet new-adapter [-o ORIGIN] [-d DEST] [-i]` - Create adapter (-i for interactive)
-- `west zephlet gen ZEPHLET` - Regenerate interface files
+**Create zephlet:**
+
+```bash
+west zephlet new -n MyZephlet -d "Description" -a "Author"  # Non-interactive
+west zephlet new                                            # Interactive (prompts for all fields)
+```
+
+**Create adapter:**
+
+```bash
+west zephlet new-adapter -o tick -d ui      # Non-interactive (all report fields)
+west zephlet new-adapter -i                 # Interactive (select zephlets and fields)
+```
+
+**Regenerate interface files:**
+
+```bash
+west zephlet gen ZEPHLET  # Requires build/modules/<zephlet>_zephlet to exist first
+```
+
+## Integration Testing
+
+New zephlets include `tests/integration/` via Copier template with 6 core lifecycle tests auto-generated:
+
+- `test_start` - Zephlet start command
+- `test_stop` - Zephlet stop command
+- `test_get_status` - Status query
+- `test_lifecycle` - Complete start/stop cycle
+- `test_get_config` - Config query (commented if no config)
+- `test_config` - Config update (commented if no config)
+
+**Test structure:**
+
+- `CMakeLists.txt` - Test target configuration
+- `prj.conf` - Test project configuration
+- `testcase.yaml` - Test metadata
+- `test_*.c` - Test implementation
 
 ## Documentation
 
