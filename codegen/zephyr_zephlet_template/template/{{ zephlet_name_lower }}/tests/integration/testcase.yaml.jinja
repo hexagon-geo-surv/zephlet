@@ -1,0 +1,8 @@
+tests:
+  {{ zephlet_name_lower }}.integration:
+    tags: integration zephlet {{ zephlet_name_lower }}
+    harness: ztest
+    platform_allow:
+      - native_sim
+      - mps2/an385 # A qemu alternative for macos and windows
+    timeout: 60

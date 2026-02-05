@@ -1,0 +1,21 @@
+# Ztest configuration
+CONFIG_ZTEST=y
+CONFIG_ASSERT=y
+
+# Logging
+CONFIG_LOG=y
+CONFIG_ZEPHLET_{{ zephlet_name_upper }}_LOG_LEVEL_DBG=y
+
+# Use zbus
+CONFIG_ZBUS=y
+CONFIG_ZBUS_CHANNEL_NAME=y
+CONFIG_ZBUS_MSG_SUBSCRIBER=y
+CONFIG_ZBUS_RUNTIME_OBSERVERS=y
+
+# Zephlets infrastructure
+CONFIG_ZEPHLETS=y
+CONFIG_ZEPHLET_{{ zephlet_name_upper }}=y
+
+# Stack and memory
+CONFIG_MAIN_STACK_SIZE=2048
+CONFIG_HEAP_MEM_POOL_SIZE=4096
