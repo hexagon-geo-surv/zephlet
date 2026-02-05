@@ -93,7 +93,7 @@ class Zephlet(WestCommand):
         # Check west config for custom zephlets path
         try:
             from west.configuration import config
-            zephlets_dir = config.get('zephlet.zephlets-dir', fallback=None)
+            zephlets_dir = config.get('zephlet', 'zephlets-dir', fallback=None)
             if zephlets_dir:
                 zephlets_dir = Path(zephlets_dir)
             else:
@@ -109,7 +109,7 @@ class Zephlet(WestCommand):
         # Check west config for custom adapters path
         try:
             from west.configuration import config
-            adapters_dir = config.get('zephlet.adapters-dir', fallback=None)
+            adapters_dir = config.get('zephlet', 'adapters-dir', fallback=None)
             if adapters_dir:
                 adapters_dir = Path(adapters_dir)
             else:
