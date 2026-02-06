@@ -24,10 +24,10 @@ struct {{ zephlet_name }}_data {
 struct {{ zephlet_name }}_api {
 {%- for field in invoke_fields %}
 {%- if field.is_empty %}
-	int (*{{ field.name }})(const struct zephlet *zephlet, const struct msg_api_context *context);
+	void (*{{ field.name }})(const struct zephlet *zephlet, struct msg_api_context *context);
 {%- else %}
-	int (*{{ field.name }})(const struct zephlet *zephlet, const struct msg_api_context *context,
-	                        const struct msg_{{ zephlet_name }}_{{ field.message_type|camel_to_snake }} *{{ field.message_type|camel_to_snake }});
+	void (*{{ field.name }})(const struct zephlet *zephlet, struct msg_api_context *context,
+	                         const struct msg_{{ zephlet_name }}_{{ field.message_type|camel_to_snake }} *{{ field.message_type|camel_to_snake }});
 {%- endif %}
 {%- endfor %}
 };
