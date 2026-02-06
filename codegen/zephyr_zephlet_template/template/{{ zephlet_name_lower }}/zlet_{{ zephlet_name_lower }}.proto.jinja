@@ -15,6 +15,7 @@ message MsgZlet{{ zephlet_name_pascal }} {
     }
 
     message Invoke {
+        optional MsgAPIContext context = 999;  /* For correlation tracking */
         oneof {{ zephlet_name_lower }}_invoke {
 {% if include_basic_commands %}
             Empty start = 1;
@@ -28,6 +29,7 @@ message MsgZlet{{ zephlet_name_pascal }} {
     }
 
     message Report {
+        optional MsgAPIContext context = 999;  /* Present only for invoke responses */
         oneof {{ zephlet_name_lower }}_report {
             MsgZephletStatus status = 1;
             Config config = 2;

@@ -252,6 +252,95 @@ def validate_zephlet_consistency(rpc_methods: list, report_fields: list, invoke_
         raise ValueError(error_msg)
 
 
+def validate_field_numbers(invoke_fields: list, report_fields: list, zephlet_name: str) -> None:
+    """
+    Validate field number and name assignments follow reserved range conventions.
+    Reserved: Invoke 1-6 (standard), 7+ (custom); Report 1-3 (standard), 4+ (custom)
+    Enforces: no duplicates, standard names at reserved numbers, warns on gaps (non-fatal)
+    """
+    errors = []
+    warnings = []
+
+    # Standard field names at reserved numbers
+    INVOKE_STANDARD_FIELDS = {
+        1: 'start',
+        2: 'stop',
+        3: 'get_status',
+        4: 'config',
+        5: 'get_config',
+        6: 'get_events'
+    }
+    REPORT_STANDARD_FIELDS = {
+        1: 'status',
+        2: 'config',
+        3: 'events'
+    }
+
+    # Validate Invoke fields
+    invoke_numbers = {}
+    for field in invoke_fields:
+        tag = field['tag']
+        name = field['name']
+
+        # Check duplicates
+        if tag in invoke_numbers:
+            errors.append(f"Invoke field '{name}' duplicate number {tag} (already '{invoke_numbers[tag]}')")
+        invoke_numbers[tag] = name
+
+        # Check standard field names at reserved numbers
+        if tag in INVOKE_STANDARD_FIELDS:
+            expected_name = INVOKE_STANDARD_FIELDS[tag]
+            if name != expected_name:
+                errors.append(
+                    f"Invoke field {tag} has name '{name}' but should be '{expected_name}' "
+                    f"(reserved numbers 1-6 require standard names)"
+                )
+
+    # Warn on Invoke gaps
+    if invoke_numbers:
+        min_tag, max_tag = min(invoke_numbers.keys()), max(invoke_numbers.keys())
+        gaps = set(range(min_tag, max_tag + 1)) - set(invoke_numbers.keys())
+        if gaps:
+            warnings.append(f"Invoke gaps in field numbers: {sorted(gaps)} (range {min_tag}-{max_tag})")
+
+    # Validate Report fields
+    report_numbers = {}
+    for field in report_fields:
+        tag = field['tag']
+        name = field['name']
+
+        # Check duplicates
+        if tag in report_numbers:
+            errors.append(f"Report field '{name}' duplicate number {tag} (already '{report_numbers[tag]}')")
+        report_numbers[tag] = name
+
+        # Check standard field names at reserved numbers
+        if tag in REPORT_STANDARD_FIELDS:
+            expected_name = REPORT_STANDARD_FIELDS[tag]
+            if name != expected_name:
+                errors.append(
+                    f"Report field {tag} has name '{name}' but should be '{expected_name}' "
+                    f"(reserved numbers 1-3 require standard names)"
+                )
+
+    # Warn on Report gaps
+    if report_numbers:
+        min_tag, max_tag = min(report_numbers.keys()), max(report_numbers.keys())
+        gaps = set(range(min_tag, max_tag + 1)) - set(report_numbers.keys())
+        if gaps:
+            warnings.append(f"Report gaps in field numbers: {sorted(gaps)} (range {min_tag}-{max_tag})")
+
+    # Print warnings, raise errors
+    if warnings:
+        print("Validation warnings:")
+        for w in warnings:
+            print(f"  - {w}")
+
+    if errors:
+        error_msg = "Field number validation failed:\n" + "\n".join(f"  - {e}" for e in errors)
+        raise ValueError(error_msg)
+
+
 def parse_zephlet_proto(proto_path: str, zephlet_name: str, module_dir: str, output_dir: str = None) -> dict:
     """Parse zephlet protobuf file and extract structure information"""
     parser = Parser()
@@ -435,6 +524,9 @@ def parse_zephlet_proto(proto_path: str, zephlet_name: str, module_dir: str, out
                     'output_streaming': output_streaming,
                     'report_field_name': report_field_name,
                 })
+
+    # Validate field numbers (NEW)
+    validate_field_numbers(invoke_fields, report_fields, zephlet_name)
 
     # Validate zephlet consistency (raises ValueError on failure)
     validate_zephlet_consistency(rpc_methods, report_fields, invoke_fields, zephlet_name)

@@ -20,13 +20,35 @@ static void {{ function_name }}(const struct zbus_channel *chan, const void *msg
 {%- for field in selected_report_fields %}
 	case MSG_ZLET_{{ origin_base_upper }}_REPORT_{{ field.name | upper }}_TAG:
 		/* TODO: Handle {{ field.name }} report from zlet_{{ origin_base }} */
+
+		/* Check if this is a response (vs async event) */
+		if (report->has_context) {
+			uint32_t correlation_id = report->context.correlation_id;
+			int return_code = report->context.return_code;
+
+			if (return_code < 0) {
+				LOG_WRN("zlet_{{ origin_base }} {{ field.name }} failed: %d", return_code);
+				/* TODO: Handle error */
+			} else {
+				LOG_DBG("zlet_{{ origin_base }} {{ field.name }} success (corr_id=%u)", correlation_id);
+			}
+
+			/* Option 1: Propagate correlation_id to next zephlet */
+{%- if dest_api_suggestions and dest_api_suggestions[0] %}
+			/* zlet_{{ dest_base }}_{{ dest_api_suggestions[0] }}(correlation_id, K_NO_WAIT); */
+{%- endif %}
+		} else {
+			/* Async event from zlet_{{ origin_base }} (no invoke correlation) */
+			LOG_DBG("Received {{ field.name }} event from zlet_{{ origin_base }}");
+
+			/* Option 2: Start new request chain (fresh correlation_id) */
+{%- if dest_api_suggestions and dest_api_suggestions[0] %}
+			/* zlet_{{ dest_base }}_{{ dest_api_suggestions[0] }}(0, K_NO_WAIT); */
+{%- endif %}
+		}
 {%- if dest_api_suggestions %}
 		/* Available zlet_{{ dest_base }} commands: {{ dest_api_suggestions | join(', ') }} */
-{%- if dest_api_suggestions[0] %}
-		/* Example: zlet_{{ dest_base }}_{{ dest_api_suggestions[0] }}(K_NO_WAIT); */
 {%- endif %}
-{%- endif %}
-		LOG_DBG("Received {{ field.name }} report from zlet_{{ origin_base }}");
 		break;
 {%- endfor %}
 	default:

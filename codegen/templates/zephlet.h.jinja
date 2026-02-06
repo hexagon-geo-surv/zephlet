@@ -24,9 +24,9 @@ struct {{ zephlet_name }}_data {
 struct {{ zephlet_name }}_api {
 {%- for field in invoke_fields %}
 {%- if field.is_empty %}
-	int (*{{ field.name }})(const struct zephlet *zephlet);
+	int (*{{ field.name }})(const struct zephlet *zephlet, const struct msg_api_context *context);
 {%- else %}
-	int (*{{ field.name }})(const struct zephlet *zephlet,
+	int (*{{ field.name }})(const struct zephlet *zephlet, const struct msg_api_context *context,
 	                        const struct msg_{{ zephlet_name }}_{{ field.message_type|camel_to_snake }} *{{ field.message_type|camel_to_snake }});
 {%- endif %}
 {%- endfor %}
@@ -35,27 +35,35 @@ struct {{ zephlet_name }}_api {
 {%- for field in invoke_fields %}
 {%- if field.is_empty %}
 
-static inline int {{ zephlet_name }}_{{ field.name }}(k_timeout_t timeout)
+static inline int {{ zephlet_name }}_{{ field.name }}(uint32_t correlation_id, k_timeout_t timeout)
 {
-	return zbus_chan_pub(&chan_{{ zephlet_name }}_invoke,
-	                     &(struct msg_{{ zephlet_name }}_invoke){
-	                             .which_{{ invoke_oneof_name }} = MSG_{{ zephlet_name_upper }}_INVOKE_{{ field.name|upper }}_TAG},
-	                     timeout);
+	struct msg_{{ zephlet_name }}_invoke ivk = {
+		.which_{{ invoke_oneof_name }} = MSG_{{ zephlet_name_upper }}_INVOKE_{{ field.name|upper }}_TAG
+	};
+	if (correlation_id != 0) {
+		ivk.has_context = true;
+		ivk.context.correlation_id = correlation_id;
+	}
+	return zbus_chan_pub(&chan_{{ zephlet_name }}_invoke, &ivk, timeout);
 }
 {%- else %}
 {%- if field.message_type|lower == 'config' and config_fields %}
 
-static inline int {{ zephlet_name }}_{{ field.name }}_set({% for cfg in config_fields %}{{ cfg.type }} {{ cfg.name }}{{ ", " if not loop.last else "" }}{% endfor %}, k_timeout_t timeout)
+static inline int {{ zephlet_name }}_{{ field.name }}_set(uint32_t correlation_id, {% for cfg in config_fields %}{{ cfg.type }} {{ cfg.name }}{{ ", " if not loop.last else "" }}{% endfor %}, k_timeout_t timeout)
 {
-	return zbus_chan_pub(&chan_{{ zephlet_name }}_invoke,
-	                     &(struct msg_{{ zephlet_name }}_invoke){
-	                             .which_{{ invoke_oneof_name }} = MSG_{{ zephlet_name_upper }}_INVOKE_{{ field.name|upper }}_TAG,
-	                             .config = {
+	struct msg_{{ zephlet_name }}_invoke ivk = {
+		.which_{{ invoke_oneof_name }} = MSG_{{ zephlet_name_upper }}_INVOKE_{{ field.name|upper }}_TAG,
+		.config = {
 {%- for cfg in config_fields %}
-	                                     .{{ cfg.name }} = {{ cfg.name }},
+			.{{ cfg.name }} = {{ cfg.name }},
 {%- endfor %}
-	                             }},
-	                     timeout);
+		}
+	};
+	if (correlation_id != 0) {
+		ivk.has_context = true;
+		ivk.context.correlation_id = correlation_id;
+	}
+	return zbus_chan_pub(&chan_{{ zephlet_name }}_invoke, &ivk, timeout);
 }
 {%- endif %}
 {%- endif %}

@@ -3,49 +3,80 @@
 
 #include "{{ zephlet_name }}_interface.h"
 
+/* Build API context from incoming context + return code */
+#define {{ zephlet_name_upper }}_API_CONTEXT(ctx, ret) \
+	(struct msg_api_context){ \
+		.correlation_id = (ctx)->correlation_id, \
+		.return_code = (ret) \
+	}
+
 {%- for field in report_fields %}
 {%- if field.is_empty %}
 
-static inline int {{ zephlet_name }}_report_{{ field.name }}(k_timeout_t timeout)
+static inline int {{ zephlet_name }}_report_{{ field.name }}(const struct msg_api_context *context, int ret, k_timeout_t timeout)
 {
-	return zbus_chan_pub(&chan_{{ zephlet_name }}_report,
-			     &(struct msg_{{ zephlet_name }}_report){
-				     .which_{{ report_oneof_name }} = MSG_{{ zephlet_name_upper }}_REPORT_{{ field.name|upper }}_TAG},
-			     timeout);
+	struct msg_{{ zephlet_name }}_report rpt = {
+		.which_{{ report_oneof_name }} = MSG_{{ zephlet_name_upper }}_REPORT_{{ field.name|upper }}_TAG
+	};
+	if (context && context->correlation_id != 0) {
+		rpt.has_context = true;
+		rpt.context = {{ zephlet_name_upper }}_API_CONTEXT(context, ret);
+	}
+	return zbus_chan_pub(&chan_{{ zephlet_name }}_report, &rpt, timeout);
 }
 {%- else %}
 {%- if field.message_type == 'MsgZephletStatus' %}
 
-static inline int {{ zephlet_name }}_report_{{ field.name }}(const struct msg_zephlet_status *status,
-					     k_timeout_t timeout)
+static inline int {{ zephlet_name }}_report_{{ field.name }}(const struct msg_api_context *context, int ret, const struct msg_zephlet_status *status, k_timeout_t timeout)
 {
-	return zbus_chan_pub(
-		&chan_{{ zephlet_name }}_report,
-		&(struct msg_{{ zephlet_name }}_report){
-			.which_{{ report_oneof_name }} = MSG_{{ zephlet_name_upper }}_REPORT_{{ field.name|upper }}_TAG, .status = *status},
-		timeout);
+	struct msg_{{ zephlet_name }}_report rpt = {
+		.which_{{ report_oneof_name }} = MSG_{{ zephlet_name_upper }}_REPORT_{{ field.name|upper }}_TAG,
+		.status = *status
+	};
+	if (context && context->correlation_id != 0) {
+		rpt.has_context = true;
+		rpt.context = {{ zephlet_name_upper }}_API_CONTEXT(context, ret);
+	}
+	return zbus_chan_pub(&chan_{{ zephlet_name }}_report, &rpt, timeout);
 }
 {%- elif field.message_type == 'Config' %}
 
-static inline int {{ zephlet_name }}_report_{{ field.name }}(const struct msg_{{ zephlet_name }}_config *config,
-					     k_timeout_t timeout)
+static inline int {{ zephlet_name }}_report_{{ field.name }}(const struct msg_api_context *context, int ret, const struct msg_{{ zephlet_name }}_config *config, k_timeout_t timeout)
 {
-	return zbus_chan_pub(
-		&chan_{{ zephlet_name }}_report,
-		&(struct msg_{{ zephlet_name }}_report){
-			.which_{{ report_oneof_name }} = MSG_{{ zephlet_name_upper }}_REPORT_{{ field.name|upper }}_TAG, .config = *config},
-		timeout);
+	struct msg_{{ zephlet_name }}_report rpt = {
+		.which_{{ report_oneof_name }} = MSG_{{ zephlet_name_upper }}_REPORT_{{ field.name|upper }}_TAG,
+		.config = *config
+	};
+	if (context && context->correlation_id != 0) {
+		rpt.has_context = true;
+		rpt.context = {{ zephlet_name_upper }}_API_CONTEXT(context, ret);
+	}
+	return zbus_chan_pub(&chan_{{ zephlet_name }}_report, &rpt, timeout);
 }
 {%- else %}
 
-static inline int {{ zephlet_name }}_report_{{ field.name }}(const struct msg_{{ zephlet_name }}_{{ field.message_type|camel_to_snake }} *{{ field.name }},
-					     k_timeout_t timeout)
+static inline int {{ zephlet_name }}_report_{{ field.name }}(const struct msg_api_context *context, int ret, const struct msg_{{ zephlet_name }}_{{ field.message_type|camel_to_snake }} *{{ field.name }}, k_timeout_t timeout)
 {
-	return zbus_chan_pub(
-		&chan_{{ zephlet_name }}_report,
-		&(struct msg_{{ zephlet_name }}_report){
-			.which_{{ report_oneof_name }} = MSG_{{ zephlet_name_upper }}_REPORT_{{ field.name|upper }}_TAG, .{{ field.name }} = *{{ field.name }}},
-		timeout);
+	struct msg_{{ zephlet_name }}_report rpt = {
+		.which_{{ report_oneof_name }} = MSG_{{ zephlet_name_upper }}_REPORT_{{ field.name|upper }}_TAG,
+		.{{ field.name }} = *{{ field.name }}
+	};
+	if (context && context->correlation_id != 0) {
+		rpt.has_context = true;
+		rpt.context = {{ zephlet_name_upper }}_API_CONTEXT(context, ret);
+	}
+	return zbus_chan_pub(&chan_{{ zephlet_name }}_report, &rpt, timeout);
+}
+
+/* Async variant for events (no correlation to invoke) */
+static inline int {{ zephlet_name }}_report_{{ field.name }}_async(const struct msg_{{ zephlet_name }}_{{ field.message_type|camel_to_snake }} *{{ field.name }}, k_timeout_t timeout)
+{
+	struct msg_{{ zephlet_name }}_report rpt = {
+		.which_{{ report_oneof_name }} = MSG_{{ zephlet_name_upper }}_REPORT_{{ field.name|upper }}_TAG,
+		.{{ field.name }} = *{{ field.name }}
+		/* has_context = false (default) */
+	};
+	return zbus_chan_pub(&chan_{{ zephlet_name }}_report, &rpt, timeout);
 }
 {%- endif %}
 {%- endif %}

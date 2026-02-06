@@ -34,6 +34,7 @@ static void api_handler(const struct zbus_channel *chan)
 {
 	struct {{ zephlet_name }}_api *api;
 	const struct msg_{{ zephlet_name }}_invoke *ivk;
+	const struct msg_api_context *context;
 
 	if (impl == NULL) {
 		LOG_ERR("Zephlet implementation required!");
@@ -47,19 +48,23 @@ static void api_handler(const struct zbus_channel *chan)
 
 	api = impl->api;
 	ivk = zbus_chan_const_msg(chan);
+	context = ivk->has_context ? &ivk->context : NULL;
 
 	switch (ivk->which_{{ invoke_oneof_name }}) {
 {%- for field in invoke_fields %}
 	case MSG_{{ zephlet_name_upper }}_INVOKE_{{ field.name|upper }}_TAG:
 		if (api->{{ field.name }}) {
 {%- if field.is_empty %}
-			api->{{ field.name }}(impl);
+			api->{{ field.name }}(impl, context);
 {%- else %}
-			api->{{ field.name }}(impl, &ivk->{{ field.name }});
+			api->{{ field.name }}(impl, context, &ivk->{{ field.name }});
 {%- endif %}
 		}
 		break;
 {%- endfor %}
+	default:
+		LOG_WRN("Unknown invoke tag: %d", ivk->which_{{ invoke_oneof_name }});
+		break;
 	}
 }
 
