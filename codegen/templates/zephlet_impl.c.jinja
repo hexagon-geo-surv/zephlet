@@ -10,6 +10,20 @@
 
 LOG_MODULE_DECLARE({{ zephlet_name }}, CONFIG_ZEPHLET_{{ base_name_upper }}_LOG_LEVEL);
 
+/* CONTEXT CORRELATION PATTERN:
+ * - All API functions receive struct msg_api_context *context
+ * - context->correlation_id: Request ID (caller sets)
+ * - context->return_code: Set to 0 (success) or -errno (failure)
+ * - report_*(context, data, timeout) - request-response (has_context=true)
+ * - report_*_async(data, timeout) - events/timers (has_context=false)
+ *
+ * Common return codes: 0 (success), -ENODEV (not ready),
+ *   -EALREADY (wrong state), -EINVAL (bad params), -ENOMEM (alloc fail)
+ *
+ * Testing: Verify correlation_id echo, return_code, has_context flag,
+ *   async events have has_context=false
+ */
+
 {%- if rpc_methods %}
 {%- for method in rpc_methods %}
 
@@ -20,11 +34,11 @@ static void start(const struct zephlet *zephlet, struct msg_api_context *context
 	struct {{ zephlet_name }}_data *data = zephlet->data;
 	struct msg_zephlet_status status;
 
-	context->return_code = 0;
+	context->return_code = 0;  /* Set return_code (0=success, <0=errno) */
 
 	K_SPINLOCK(&data->lock) {
 		if (!data->status.is_ready) {
-			context->return_code = -ENODEV;  /* Not initialized (init failed) */
+			context->return_code = -ENODEV;  /* Not initialized */
 		} else if (data->status.is_running) {
 			context->return_code = -EALREADY;  /* Already running */
 		} else {
@@ -103,6 +117,7 @@ static void config(const struct zephlet *zephlet, struct msg_api_context *contex
 
 	context->return_code = 0;
 
+	/* Validate config, set -EINVAL on error */
 	/* TODO: Validate config (set context->return_code = -EINVAL on error) */
 
 	K_SPINLOCK(&data->lock) {
