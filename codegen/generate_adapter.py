@@ -167,14 +167,11 @@ def select_zephlets_interactive(zephlets):
     return origin, dest
 
 
-def filter_report_fields(origin, interactive=True):
+def filter_report_fields(origin):
     """
     Let user select which report fields to handle
     Returns: filtered list of report fields
     """
-    if not interactive:
-        return origin['report_fields']
-
     fields = origin['report_fields']
     if not fields:
         return []
@@ -465,9 +462,6 @@ def main():
     parser = argparse.ArgumentParser(description='Generate adapter boilerplate from zephlet protos')
     parser.add_argument('--zephlets-path', required=True, help='Path to zephlets directory')
     parser.add_argument('--output-dir', required=True, help='Output directory for adapter files')
-    parser.add_argument('--interactive', action='store_true', help='Interactive mode')
-    parser.add_argument('--origin', help='Origin zephlet name (non-interactive)')
-    parser.add_argument('--destination', help='Destination zephlet name (non-interactive)')
 
     args = parser.parse_args()
 
@@ -489,26 +483,9 @@ def main():
 
     print(f"Found {len(zephlets)} zephlets")
 
-    # Select zephlets
-    if args.interactive:
-        origin, dest = select_zephlets_interactive(zephlets)
-        selected_fields = filter_report_fields(origin, interactive=True)
-    else:
-        if not args.origin or not args.destination:
-            print("Error: --origin and --destination required in non-interactive mode")
-            sys.exit(1)
-
-        origin = next((z for z in zephlets if z['name'] == args.origin), None)
-        dest = next((z for z in zephlets if z['name'] == args.destination), None)
-
-        if not origin:
-            print(f"Error: Origin zephlet '{args.origin}' not found")
-            sys.exit(1)
-        if not dest:
-            print(f"Error: Destination zephlet '{args.destination}' not found")
-            sys.exit(1)
-
-        selected_fields = origin['report_fields']
+    # Select zephlets (always interactive)
+    origin, dest = select_zephlets_interactive(zephlets)
+    selected_fields = filter_report_fields(origin)
 
     # Get destination API suggestions
     dest_api_suggestions = suggest_destination_api(dest)

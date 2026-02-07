@@ -46,17 +46,7 @@ class Zephlet(WestCommand):
         adapter_parser = subparsers.add_parser(
             'new-adapter',
             help='create a new adapter',
-            description='Create a new adapter between two zephlets')
-        adapter_parser.add_argument(
-            '-o', '--origin',
-            help='origin zephlet name (non-interactive mode)')
-        adapter_parser.add_argument(
-            '-d', '--destination',
-            help='destination zephlet name (non-interactive mode)')
-        adapter_parser.add_argument(
-            '-i', '--interactive',
-            action='store_true',
-            help='run in interactive mode')
+            description='Create a new adapter between two zephlets (interactive only)')
 
         # gen subcommand
         gen_parser = subparsers.add_parser(
@@ -273,24 +263,11 @@ build:
         cmd.extend(['--zephlets-path', str(paths['zephlets_dir'])])
         cmd.extend(['--output-dir', str(paths['adapters_dir'])])
 
-        # Interactive mode or non-interactive
-        if args.interactive or (not args.origin or not args.destination):
-            cmd.append('--interactive')
-        else:
-            cmd.extend(['--origin', args.origin])
-            cmd.extend(['--destination', args.destination])
-
         log.inf('Creating new adapter...')
         result = subprocess.run(cmd, cwd=paths['workspace_root'])
 
         if result.returncode != 0:
             log.die('failed to create adapter')
-
-        if args.origin and args.destination and not args.interactive:
-            log.inf(f'Adapter {args.origin} -> {args.destination} created successfully')
-            log.inf(f'Next steps:')
-            log.inf(f'  1. Implement TODOs in adapters/{args.origin.capitalize()}+{args.destination.capitalize()}_zlet_adapter.c')
-            log.inf(f'  2. Run: just c b r')
 
     def _gen_files(self, args):
         """Regenerate interface files for an existing zephlet."""

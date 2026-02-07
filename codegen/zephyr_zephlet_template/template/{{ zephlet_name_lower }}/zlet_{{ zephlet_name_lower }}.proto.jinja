@@ -17,14 +17,12 @@ message MsgZlet{{ zephlet_name_pascal }} {
     message Invoke {
         optional MsgAPIContext context = 999;  /* For correlation tracking */
         oneof {{ zephlet_name_lower }}_invoke {
-{% if include_basic_commands %}
             Empty start = 1;
             Empty stop = 2;
             Empty get_status = 3;
             Config config = 4;
             Empty get_config = 5;
             Empty get_events = 6;
-{% endif %}
         }
     }
 
@@ -39,7 +37,6 @@ message MsgZlet{{ zephlet_name_pascal }} {
 }
 
 service {{ zephlet_name_pascal }} {
-{% if include_basic_commands %}
     rpc start (Empty) returns (MsgZephletStatus);
     rpc stop (Empty) returns (MsgZephletStatus);
     rpc get_status (Empty) returns (MsgZephletStatus);
@@ -47,5 +44,4 @@ service {{ zephlet_name_pascal }} {
     rpc get_config (Empty) returns (MsgZlet{{ zephlet_name_pascal }}.Config);
     /* This will report the {{ zephlet_name_lower }} events */
     rpc get_events (Empty) returns (stream MsgZlet{{ zephlet_name_pascal }}.Events);
-{% endif %}
 }

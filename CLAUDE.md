@@ -4,7 +4,7 @@
 
 **West Extensions** (primary, works from any directory):
 - `west zephlet new [-n NAME] [-d DESC] [-a AUTHOR]` - Create zephlet (interactive if no args)
-- `west zephlet new-adapter [-o ORIGIN] [-d DEST] [-i]` - Create adapter (-i for interactive)
+- `west zephlet new-adapter` - Create adapter (always interactive)
 - `west zephlet gen ZEPHLET` - Regenerate interface files (needs `build/modules/<zephlet>_zephlet`)
 
 **Configuration:**
@@ -93,12 +93,11 @@ Copier template auto-includes pattern. Self-managed visibility, no manual root u
 
 **Workflow:**
 
-1. `west zephlet new-adapter` → select origin/dest → select report fields
+1. `west zephlet new-adapter` → prompts for origin/dest → select report fields
 2. Implement TODO comments in generated `<Origin>+<Dest>_zlet_adapter.c`
 3. Enable CONFIG_<ORIGIN>\_TO\_<DEST>\_ADAPTER=y
 
-**Non-interactive:** `west zephlet new-adapter -o ORIGIN -d DEST` (generates all report fields)
-**Interactive:** `west zephlet new-adapter -i` (prompts for zephlets and report fields)
+Always interactive - prompts for origin zephlet selection, destination zephlet selection, and report fields to handle.
 
 Auto-generates: adapter.c (with interface includes only, no .pb.h), Kconfig entry, CMakeLists.txt entry. Parses protos for Report fields (origin) + Invoke fields (dest, adds API suggestions to TODOs). Duplicate detection, manual fallback on auto-update failure.
 

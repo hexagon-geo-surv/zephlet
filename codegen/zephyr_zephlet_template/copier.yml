@@ -44,11 +44,6 @@ zephlet_description:
   default: "{{ zephlet_name }} Zephlet Module"
   placeholder: "Provides user interface functionalities for the application"
 
-include_basic_commands:
-  type: bool
-  help: Include the basic commands?
-  default: true
-
 author_name:
   type: str
   help: Author name (optional)
