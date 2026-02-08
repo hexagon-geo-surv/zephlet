@@ -9,6 +9,7 @@
 #include <zephyr/zbus/zbus.h>
 
 ZBUS_CHAN_DECLARE(chan_{{ zephlet_name }}_invoke, chan_{{ zephlet_name }}_report);
+ZBUS_OBS_DECLARE(msub_{{ zephlet_name }}_report);
 
 struct {{ zephlet_name }}_data {
 	struct k_spinlock lock;
@@ -70,5 +71,8 @@ static inline int {{ zephlet_name }}_{{ field.name }}_set(uint32_t correlation_i
 {%- endfor %}
 
 int {{ zephlet_name }}_set_implementation(const struct zephlet *implementation);
+
+struct msg_{{ zephlet_name }}_report *{{ zephlet_name }}_wait_report(
+    int filter_tag, k_timeout_t timeout);
 
 #endif /* _{{ zephlet_name_upper }}_H_ */

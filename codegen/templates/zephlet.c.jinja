@@ -14,6 +14,11 @@ ZBUS_CHAN_DEFINE(chan_{{ zephlet_name }}_invoke, struct msg_{{ zephlet_name }}_i
 ZBUS_CHAN_DEFINE(chan_{{ zephlet_name }}_report, struct msg_{{ zephlet_name }}_report, NULL, NULL,
 		 ZBUS_OBSERVERS_EMPTY, MSG_{{ zephlet_name_upper }}_REPORT_INIT_DEFAULT);
 
+ZBUS_MSG_SUBSCRIBER_DEFINE_WITH_ENABLE(msub_{{ zephlet_name }}_report, false);
+ZBUS_CHAN_ADD_OBS(chan_{{ zephlet_name }}_report, msub_{{ zephlet_name }}_report, 3);
+
+static struct msg_{{ zephlet_name }}_report {{ zephlet_name }}_last_report;
+
 static const struct zephlet *impl = NULL;
 
 int {{ zephlet_name }}_set_implementation(const struct zephlet *implementation)
@@ -76,3 +81,28 @@ static void api_handler(const struct zbus_channel *chan)
 }
 
 ZBUS_LISTENER_DEFINE(lis_{{ zephlet_name }}, api_handler);
+
+struct msg_{{ zephlet_name }}_report *{{ zephlet_name }}_wait_report(
+    int filter_tag, k_timeout_t timeout)
+{
+	const struct zbus_channel *chan;
+	struct msg_{{ zephlet_name }}_report *ret_report = NULL;
+	k_timepoint_t end_time = sys_timepoint_calc(timeout);
+
+	do {
+		int err = zbus_sub_wait_msg(&msub_{{ zephlet_name }}_report, &chan,
+					    &{{ zephlet_name }}_last_report,
+					    sys_timepoint_timeout(end_time));
+		if (err != 0 || chan != &chan_{{ zephlet_name }}_report) {
+			continue;
+		}
+		if (filter_tag >= 0 &&
+		    ({{ zephlet_name }}_last_report.which_{{ report_oneof_name }} != filter_tag)) {
+			continue;
+		}
+		ret_report = &{{ zephlet_name }}_last_report;
+	} while (ret_report == NULL &&
+		 !K_TIMEOUT_EQ(sys_timepoint_timeout(end_time), K_NO_WAIT));
+
+	return ret_report;
+}
