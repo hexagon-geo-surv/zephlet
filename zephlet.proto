@@ -3,6 +3,7 @@ syntax = "proto3";
 import "nanopb.proto";
 
 option (nanopb_fileopt).anonymous_oneof = true;
+option (nanopb_fileopt).long_names = false;
 
 message _ {}
 

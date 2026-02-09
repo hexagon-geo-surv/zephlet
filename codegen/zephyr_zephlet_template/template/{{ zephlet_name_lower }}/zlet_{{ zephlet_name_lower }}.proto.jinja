@@ -4,6 +4,7 @@ import "nanopb.proto";
 import "zephlet.proto";
 
 option (nanopb_fileopt).anonymous_oneof = true;
+option (nanopb_fileopt).long_names = false;
 
 message MsgZlet{{ zephlet_name_pascal }} {
     message Config {
