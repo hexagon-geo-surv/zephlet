@@ -57,7 +57,7 @@ Uses `ZBUS_ASYNC_LISTENER_DEFINE()` + `ZBUS_CHAN_ADD_OBS(priority=3)`. Kconfig t
 
 ### Protobuf (nanopb)
 
-`MsgZlet<Zephlet> { Config{}, Events{}, Invoke{oneof}, Report{oneof} }`. Invoke: start/stop/get_status/config/get_config+custom. Report: status/config+events. Import "zephlet.proto" for Empty/MsgZephletStatus. Use `option (nanopb_fileopt).anonymous_oneof = true`. Query: get_status/get_config → reports. PROTO_FILES_LIST → nanopb. RPC return types strictly validated against Invoke/Report fields.
+`MsgZlet<Zephlet> { Config{}, Events{}, Invoke{oneof}, Report{oneof} }`. Invoke: start/stop/get_status/config/get_config+custom. Report: status/config+events. Import "zephlet.proto" for Empty/MsgZephletStatus. Use `option (nanopb_fileopt).anonymous_oneof = true` and `option (nanopb_fileopt).long_names = false` (shorter C symbols, e.g. `MSG_TICK_INVOKE` instead of `MSG_ZLET_TICK_MSG_ZLET_TICK_INVOKE`). Query: get_status/get_config → reports. PROTO_FILES_LIST → nanopb. RPC return types strictly validated against Invoke/Report fields.
 
 **Lifecycle Pattern:** Standard fields explicitly listed in all zephlet protos. Reserved numbers: Invoke 1-6 (start, stop, get_status, config, get_config, get_events), Report 1-3 (status, config, events). Custom commands/reports start at 7+/4+. Comments mark custom field ranges.
 
@@ -67,7 +67,7 @@ Uses `ZBUS_ASYNC_LISTENER_DEFINE()` + `ZBUS_CHAN_ADD_OBS(priority=3)`. Kconfig t
 
 **Lifecycle state:** `MsgZephletStatus {is_running, is_ready}`. `is_ready` set by init (SYS_INIT), `is_running` controlled by start/stop. Init happens once, start/stop multiple times.
 
-**nanopb types:** Use `struct msg_<zephlet>_{invoke|report|config}`. Naming: `MsgZephlet.Invoke` → `msg_zephlet_invoke`, tags: `MSG_ZEPHLET_INVOKE_START_TAG`, oneof: `which_<oneof_name>`.
+**nanopb types:** Use `struct msg_<zephlet>_{invoke|report|config}`. Naming: `MsgZephlet.Invoke` → `msg_zephlet_invoke`, tags (with `long_names = false`): `MSG_TICK_INVOKE_START_TAG`, oneof: `which_<oneof_name>`.
 
 ## Build System
 
