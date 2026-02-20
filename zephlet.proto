@@ -12,11 +12,11 @@ message Empty {}
 /* Status message for zephlet lifecycle */
 message MsgZephletStatus {
   bool is_running = 1;
-  bool is_ready = 2;  /* True if zephlet initialized successfully (init returned 0) */
+  bool is_ready = 2; /* True if zephlet initialized successfully (init returned 0) */
 }
 
 /* API call context for invoke-report correlation */
 message MsgAPIContext {
-  uint32 correlation_id = 1;  /* Request correlation ID (0 = no correlation) */
-  int32 return_code = 2;      /* 0=success, <0=error (POSIX errno codes) */
+  uint32 correlation_id = 1; /* Request correlation ID (0 = no correlation) */
+  int32 return_code = 2; /* 0=success, <0=error (POSIX errno codes) */
 }
