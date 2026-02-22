@@ -263,6 +263,16 @@ build:
         cmd.extend(['--zephlets-path', str(paths['zephlets_dir'])])
         cmd.extend(['--output-dir', str(paths['adapters_dir'])])
 
+        # Pass generated protos path so adapter generator can find Invoke/Report
+        # Try multiple build dir locations
+        for build_candidate in [
+            paths['build_dir'] / 'modules',
+            Path(paths['zephlets_dir']).parent.parent / 'build' / 'modules',
+        ]:
+            if build_candidate.exists():
+                cmd.extend(['--generated-protos-path', str(build_candidate)])
+                break
+
         log.inf('Creating new adapter...')
         result = subprocess.run(cmd, cwd=paths['workspace_root'])
 
