@@ -16,7 +16,7 @@ LOG_MODULE_DECLARE(adapter, CONFIG_ADAPTERS_LOG_LEVEL);
 {% for field in selected_report_fields %}
 void {{ callback_prefix }}_on_report_{{ field.name }}(
 	const struct zbus_channel *chan,
-	const struct msg_zlet_{{ origin_base }}_report *report)
+	const struct {{ origin_pb_prefix }}_report *report)
 {
 #warning "{{ callback_prefix }}_on_report_{{ field.name }} not implemented"
 {%- if dest_api_suggestions %}

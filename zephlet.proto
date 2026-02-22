@@ -10,13 +10,52 @@ message _ {}
 message Empty {}
 
 /* Status message for zephlet lifecycle */
-message MsgZephletStatus {
+message ZephletStatus {
   bool is_running = 1;
   bool is_ready = 2; /* True if zephlet initialized successfully (init returned 0) */
 }
 
 /* API call context for invoke-report correlation */
-message MsgAPIContext {
+message ZephletContext {
   uint32 correlation_id = 1; /* Request correlation ID (0 = no correlation) */
   int32 return_code = 2; /* 0=success, <0=error (POSIX errno codes) */
+}
+
+message Invoke {
+  optional ZephletContext context = 999; /* For correlation tracking */
+  oneof base_invoke_tag {
+    Empty start = 1;
+    Empty stop = 2;
+    Empty get_status = 3;
+    Config config = 4;
+    Empty get_config = 5;
+    Empty get_events = 6;
+  }
+}
+
+/* Each zephlet must have its specific configuration */
+message Config {}
+
+/* Each zephlet must have its specific events list. Must contain at least the timestamp */
+message Events {
+  int32 timestamp = 1;
+}
+
+message Report {
+  optional ZephletContext context = 999; /* Present only for invoke responses */
+  oneof base_report_tag {
+    Empty empty = 1;
+    ZephletStatus status = 2;
+    Config config = 3;
+    Events events = 4;
+  }
+}
+
+service ZephletBase {
+  rpc start(Empty) returns (ZephletStatus);
+  rpc stop(Empty) returns (ZephletStatus);
+  rpc get_status(Empty) returns (ZephletStatus);
+  rpc config(Config) returns (Config);
+  rpc get_config(Empty) returns (Config);
+  rpc get_events(Empty) returns (stream Events);
 }

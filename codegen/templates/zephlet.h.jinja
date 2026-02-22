@@ -5,7 +5,7 @@
 #define _{{ zephlet_name_upper }}_H_
 
 #include "zephlet.h"
-#include "{{ module_name }}/{{ zephlet_name }}.pb.h"
+#include "{{ zephlet_name }}.pb.h"
 #include <zephyr/zbus/zbus.h>
 
 ZBUS_CHAN_DECLARE(chan_{{ zephlet_name }}_invoke, chan_{{ zephlet_name }}_report);
@@ -13,22 +13,25 @@ ZBUS_OBS_DECLARE(msub_{{ zephlet_name }}_report);
 
 struct {{ zephlet_name }}_data {
 	struct k_spinlock lock;
-	struct msg_zephlet_status status;
+	struct zephlet_status status;
 {%- if has_config %}
 	struct {{ config_type }} config;
 {%- endif %}
 {%- if has_events %}
-	struct msg_{{ zephlet_name }}_events events;
+	struct {{ pb_prefix }}_events events;
 {%- endif %}
 };
 
 struct {{ zephlet_name }}_api {
 {%- for field in invoke_fields %}
 {%- if field.is_empty %}
-	void (*{{ field.name }})(const struct zephlet *zephlet, struct msg_api_context *context);
+	void (*{{ field.name }})(const struct zephlet *zephlet, struct zephlet_context *context);
+{%- elif field.is_enum %}
+	void (*{{ field.name }})(const struct zephlet *zephlet, struct zephlet_context *context,
+	                         enum {{ pb_prefix }}_{{ field.message_type|camel_to_snake }} {{ field.message_type|camel_to_snake }});
 {%- else %}
-	void (*{{ field.name }})(const struct zephlet *zephlet, struct msg_api_context *context,
-	                         const struct msg_{{ zephlet_name }}_{{ field.message_type|camel_to_snake }} *{{ field.message_type|camel_to_snake }});
+	void (*{{ field.name }})(const struct zephlet *zephlet, struct zephlet_context *context,
+	                         const struct {{ pb_prefix }}_{{ field.message_type|camel_to_snake }} *{{ field.message_type|camel_to_snake }});
 {%- endif %}
 {%- endfor %}
 };
@@ -38,8 +41,8 @@ struct {{ zephlet_name }}_api {
 
 static inline int {{ zephlet_name }}_{{ field.name }}(uint32_t correlation_id, k_timeout_t timeout)
 {
-	struct msg_{{ zephlet_name }}_invoke ivk = {
-		.which_{{ invoke_oneof_name }} = MSG_{{ zephlet_name_upper }}_INVOKE_{{ field.name|upper }}_TAG
+	struct {{ pb_prefix }}_invoke ivk = {
+		.which_{{ invoke_oneof_name }} = {{ pb_prefix_upper }}_INVOKE_{{ field.name|upper }}_TAG
 	};
 	if (correlation_id != 0) {
 		ivk.has_context = true;
@@ -52,8 +55,8 @@ static inline int {{ zephlet_name }}_{{ field.name }}(uint32_t correlation_id, k
 
 static inline int {{ zephlet_name }}_{{ field.name }}_set(uint32_t correlation_id, {% for cfg in config_fields %}{{ cfg.type }} {{ cfg.name }}{{ ", " if not loop.last else "" }}{% endfor %}, k_timeout_t timeout)
 {
-	struct msg_{{ zephlet_name }}_invoke ivk = {
-		.which_{{ invoke_oneof_name }} = MSG_{{ zephlet_name_upper }}_INVOKE_{{ field.name|upper }}_TAG,
+	struct {{ pb_prefix }}_invoke ivk = {
+		.which_{{ invoke_oneof_name }} = {{ pb_prefix_upper }}_INVOKE_{{ field.name|upper }}_TAG,
 		.config = {
 {%- for cfg in config_fields %}
 			.{{ cfg.name }} = {{ cfg.name }},
@@ -72,7 +75,7 @@ static inline int {{ zephlet_name }}_{{ field.name }}_set(uint32_t correlation_i
 
 int {{ zephlet_name }}_set_implementation(const struct zephlet *implementation);
 
-struct msg_{{ zephlet_name }}_report *{{ zephlet_name }}_wait_report(
+struct {{ pb_prefix }}_report *{{ zephlet_name }}_wait_report(
     int filter_tag, k_timeout_t timeout);
 
 #endif /* _{{ zephlet_name_upper }}_H_ */

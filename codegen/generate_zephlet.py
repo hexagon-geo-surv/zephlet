@@ -139,6 +139,8 @@ def map_proto_type_to_c(proto_type: str) -> str:
         'bytes': 'uint8_t*',
         'Empty': 'empty',
         'MsgZephletStatus': 'msg_zephlet_status',
+        'ZephletStatus': 'zephlet_status',
+        'ZephletContext': 'zephlet_context',
     }
     return mapping.get(proto_type, proto_type)
 
@@ -174,7 +176,7 @@ def extract_report_field_from_return_type(return_type: str, zephlet_name: str, r
         # Multiple fields with same type: fall through to inference
 
     # Fallback: Infer from type name
-    if return_type == 'MsgZephletStatus':
+    if return_type in ('MsgZephletStatus', 'ZephletStatus'):
         return 'status'
     if return_type == 'Empty':
         return 'empty'
@@ -271,9 +273,10 @@ def validate_field_numbers(invoke_fields: list, report_fields: list, zephlet_nam
         6: 'get_events'
     }
     REPORT_STANDARD_FIELDS = {
-        1: 'status',
-        2: 'config',
-        3: 'events'
+        1: 'empty',
+        2: 'status',
+        3: 'config',
+        4: 'events'
     }
 
     # Validate Invoke fields
@@ -320,7 +323,7 @@ def validate_field_numbers(invoke_fields: list, report_fields: list, zephlet_nam
             if name != expected_name:
                 errors.append(
                     f"Report field {tag} has name '{name}' but should be '{expected_name}' "
-                    f"(reserved numbers 1-3 require standard names)"
+                    f"(reserved numbers 1-4 require standard names)"
                 )
 
     # Warn on Report gaps
@@ -360,15 +363,30 @@ def parse_zephlet_proto(proto_path: str, zephlet_name: str, module_dir: str, out
         if hasattr(element, 'name') and element.__class__.__name__ == 'Message':
             messages.append(element)
 
-    # Find the zephlet message (e.g., MsgZletTick)
+    # Find the zephlet message
+    # Supports: old pattern (MsgZletTick, MsgTickZephlet) and new pattern (Tick, Ui)
     zephlet_msg = None
     for message in messages:
+        # Old pattern: Msg*Zephlet or MsgZlet*
         if message.name.startswith('Msg') and (message.name.endswith('Zephlet') or message.name.startswith('MsgZlet')):
             zephlet_msg = message
             break
 
     if not zephlet_msg:
-        print("Error: No zephlet message found (expected Msg*Zephlet or MsgZlet* pattern)")
+        # New pattern: message containing Invoke + Report sub-messages
+        for message in messages:
+            if message.name in ('_', 'Empty', 'ZephletStatus', 'ZephletContext'):
+                continue
+            nested_names = set()
+            for elem in message.elements:
+                if hasattr(elem, 'name') and elem.__class__.__name__ == 'Message':
+                    nested_names.add(elem.name)
+            if 'Invoke' in nested_names and 'Report' in nested_names:
+                zephlet_msg = message
+                break
+
+    if not zephlet_msg:
+        print("Error: No zephlet message found")
         sys.exit(1)
 
     # Extract base name from zephlet_name (e.g., "zlet_ui" -> "ui")
@@ -383,11 +401,33 @@ def parse_zephlet_proto(proto_path: str, zephlet_name: str, module_dir: str, out
     base_name_camel = snake_to_camel(base_name)
 
     # Extract zephlet definition (for RPC methods)
+    # First try: service at top level of proto file
     zephlet_def = None
     for element in proto_file.file_elements:
         if hasattr(element, 'name') and element.__class__.__name__ == 'Service':
             zephlet_def = element
             break
+
+    # Second try: service inside a /* ... */ comment block (generated protos)
+    if not zephlet_def:
+        import re
+        svc_match = re.search(
+            r'/\*.*?(service\s+\w+\s*\{[^}]*\}).*?\*/',
+            proto_content,
+            re.DOTALL
+        )
+        if svc_match:
+            svc_text = svc_match.group(1).strip()
+            # Wrap in minimal proto so parser can handle it
+            svc_proto = f'syntax = "proto3";\nmessage Empty {{}}\n{svc_text}\n'
+            try:
+                svc_parsed = parser.parse(svc_proto)
+                for element in svc_parsed.file_elements:
+                    if hasattr(element, 'name') and element.__class__.__name__ == 'Service':
+                        zephlet_def = element
+                        break
+            except Exception:
+                pass
 
     # Find nested messages
     invoke_msg = None
@@ -395,11 +435,14 @@ def parse_zephlet_proto(proto_path: str, zephlet_name: str, module_dir: str, out
     config_msg = None
     events_msg = None
 
-    # Get nested messages from elements
+    # Get nested messages and enums from elements
     nested_messages = []
+    nested_enum_names = set()
     for element in zephlet_msg.elements:
         if hasattr(element, 'name') and element.__class__.__name__ == 'Message':
             nested_messages.append(element)
+        elif hasattr(element, 'name') and element.__class__.__name__ == 'Enum':
+            nested_enum_names.add(element.name)
 
     for nested in nested_messages:
         if nested.name == 'Invoke':
@@ -427,12 +470,16 @@ def parse_zephlet_proto(proto_path: str, zephlet_name: str, module_dir: str, out
             # Extract fields from oneof
             for field_element in element.elements:
                 if hasattr(field_element, 'name') and field_element.__class__.__name__ == 'Field':
+                    # Strip parent qualifier (e.g., Tick.Config -> Config)
+                    raw_type = field_element.type
+                    unqualified_type = raw_type.rsplit('.', 1)[-1] if '.' in raw_type else raw_type
                     invoke_fields.append({
                         'name': field_element.name,
                         'tag': field_element.number,
-                        'type': field_element.type,
-                        'is_empty': field_element.type == 'Empty',
-                        'message_type': field_element.type if field_element.type != 'Empty' else None
+                        'type': raw_type,
+                        'is_empty': raw_type == 'Empty',
+                        'is_enum': unqualified_type in nested_enum_names,
+                        'message_type': unqualified_type if raw_type != 'Empty' else None
                     })
 
     if not invoke_fields:
@@ -453,12 +500,15 @@ def parse_zephlet_proto(proto_path: str, zephlet_name: str, module_dir: str, out
                 # Extract fields from oneof
                 for field_element in element.elements:
                     if hasattr(field_element, 'name') and field_element.__class__.__name__ == 'Field':
+                        # Strip parent qualifier (e.g., Tick.Events -> Events)
+                        raw_type = field_element.type
+                        unqualified_type = raw_type.rsplit('.', 1)[-1] if '.' in raw_type else raw_type
                         report_fields.append({
                             'name': field_element.name,
                             'tag': field_element.number,
-                            'type': field_element.type,
-                            'is_empty': field_element.type == 'Empty',
-                            'message_type': field_element.type if field_element.type != 'Empty' else None
+                            'type': raw_type,
+                            'is_empty': raw_type == 'Empty',
+                            'message_type': unqualified_type if raw_type != 'Empty' else None
                         })
                 break
 
@@ -516,6 +566,10 @@ def parse_zephlet_proto(proto_path: str, zephlet_name: str, module_dir: str, out
                     report_fields
                 )
 
+                # Check if input type is an enum
+                unqualified_input = input_type.rsplit('.', 1)[-1] if '.' in str(input_type) else str(input_type)
+                input_is_enum = unqualified_input in nested_enum_names
+
                 rpc_methods.append({
                     'name': method_element.name,
                     'input_type': input_type,
@@ -523,6 +577,7 @@ def parse_zephlet_proto(proto_path: str, zephlet_name: str, module_dir: str, out
                     'input_streaming': input_streaming,
                     'output_streaming': output_streaming,
                     'report_field_name': report_field_name,
+                    'input_is_enum': input_is_enum,
                 })
 
     # Validate field numbers (NEW)
@@ -531,6 +586,11 @@ def parse_zephlet_proto(proto_path: str, zephlet_name: str, module_dir: str, out
     # Validate zephlet consistency (raises ValueError on failure)
     validate_zephlet_consistency(rpc_methods, report_fields, invoke_fields, zephlet_name)
 
+    # Nanopb C prefix: derived from proto message name
+    # MsgZletTick → msg_zlet_tick, Tick → tick
+    pb_prefix = camel_to_snake(zephlet_msg.name)
+    pb_prefix_upper = pb_prefix.upper()
+
     return {
         'zephlet_name': zephlet_name,
         'zephlet_name_upper': snake_to_upper(zephlet_name),
@@ -538,6 +598,8 @@ def parse_zephlet_proto(proto_path: str, zephlet_name: str, module_dir: str, out
         'base_name': base_name,
         'base_name_upper': base_name_upper,
         'base_name_camel': base_name_camel,
+        'pb_prefix': pb_prefix,
+        'pb_prefix_upper': pb_prefix_upper,
         'module_dir': module_dir,
         'module_name': os.path.basename(module_dir),
         'invoke_oneof_name': invoke_oneof_name,
@@ -545,7 +607,7 @@ def parse_zephlet_proto(proto_path: str, zephlet_name: str, module_dir: str, out
         'invoke_fields': invoke_fields,
         'report_fields': report_fields,
         'config_fields': config_fields,
-        'config_type': f"msg_{zephlet_name}_config" if config_msg else None,
+        'config_type': f"{pb_prefix}_config" if config_msg else None,
         'has_config': config_msg is not None,
         'has_events': events_msg is not None,
         'rpc_methods': rpc_methods

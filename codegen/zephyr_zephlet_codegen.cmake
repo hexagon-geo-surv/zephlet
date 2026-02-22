@@ -51,6 +51,30 @@ function(zephyr_zephlet_generate ZEPHLET_NAME PROTO_FILE)
   set(${ZEPHLET_NAME}_GENERATED_C ${GENERATED_C} PARENT_SCOPE)
 endfunction()
 
+# Proto generation: generates full .proto from schema + simplified base proto
+# Outputs the generated proto to build directory for nanopb compilation.
+function(zephyr_zephlet_generate_proto ZEPHLET_NAME SCHEMA_FILE BASE_PROTO)
+  set(GENERATE_PROTO_SCRIPT "${ZEPHYR_SHARED_ZEPHLET_MODULE_DIR}/codegen/generate_proto.py")
+  set(GENERATED_PROTO "${CMAKE_CURRENT_BINARY_DIR}/${ZEPHLET_NAME}.proto")
+
+  file(GLOB PROTO_TEMPLATE_FILES "${ZEPHYR_SHARED_ZEPHLET_MODULE_DIR}/codegen/templates/zephlet_proto*.jinja")
+
+  add_custom_command(
+    OUTPUT ${GENERATED_PROTO}
+    COMMAND ${PYTHON_EXECUTABLE} ${GENERATE_PROTO_SCRIPT}
+      --schema ${SCHEMA_FILE}
+      --proto ${BASE_PROTO}
+      --output ${GENERATED_PROTO}
+    DEPENDS ${SCHEMA_FILE} ${BASE_PROTO} ${GENERATE_PROTO_SCRIPT} ${PROTO_TEMPLATE_FILES}
+    COMMENT "Generating ${ZEPHLET_NAME}.proto from base"
+    VERBATIM
+  )
+
+  add_custom_target(${ZEPHLET_NAME}_proto_gen DEPENDS ${GENERATED_PROTO})
+
+  set(${ZEPHLET_NAME}_GENERATED_PROTO ${GENERATED_PROTO} PARENT_SCOPE)
+endfunction()
+
 # Helper: capitalize first letter of a string (tick -> Tick)
 function(_zephlet_capitalize INPUT OUTPUT_VAR)
   string(SUBSTRING "${INPUT}" 0 1 _first)
@@ -99,9 +123,14 @@ function(zephlet_adapter_generate)
   set(CODEGEN_SCRIPT "${ZEPHYR_SHARED_ZEPHLET_MODULE_DIR}/codegen/generate_adapter.py")
   set(BUILD_OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/${ADAPTER_NAME}.c")
   set(IMPL_FILE "${CMAKE_CURRENT_SOURCE_DIR}/src/${ADAPTER_NAME}_impl.c")
+  set(GENERATED_PROTOS_PATH "${CMAKE_BINARY_DIR}/modules")
 
   file(GLOB TEMPLATE_FILES "${ZEPHYR_SHARED_ZEPHLET_MODULE_DIR}/codegen/templates/adapter*.jinja")
   file(GLOB PROTO_FILES "${ZEPHLETS_PATH}/*/*.proto")
+
+  # Collect generated proto files as dependencies
+  set(_gen_proto_origin "${GENERATED_PROTOS_PATH}/zlet_${ARG_ORIGIN}/zlet_${ARG_ORIGIN}.proto")
+  set(_gen_proto_dest "${GENERATED_PROTOS_PATH}/zlet_${ARG_DEST}/zlet_${ARG_DEST}.proto")
 
   # Bootstrap: generate _impl.c if missing
   if(NOT EXISTS ${IMPL_FILE})
@@ -110,6 +139,7 @@ function(zephlet_adapter_generate)
       COMMAND ${PYTHON_EXECUTABLE} ${CODEGEN_SCRIPT}
         --non-interactive
         --zephlets-path ${ZEPHLETS_PATH}
+        --generated-protos-path ${GENERATED_PROTOS_PATH}
         --origin ${ARG_ORIGIN}
         --dest ${ARG_DEST}
         --fields "${SELECTED_FIELDS}"
@@ -129,17 +159,27 @@ function(zephlet_adapter_generate)
     COMMAND ${PYTHON_EXECUTABLE} ${CODEGEN_SCRIPT}
       --non-interactive
       --zephlets-path ${ZEPHLETS_PATH}
+      --generated-protos-path ${GENERATED_PROTOS_PATH}
       --origin ${ARG_ORIGIN}
       --dest ${ARG_DEST}
       --fields "${SELECTED_FIELDS}"
       --output-dir ${CMAKE_CURRENT_SOURCE_DIR}
       --build-dir ${CMAKE_CURRENT_BINARY_DIR}
     DEPENDS ${PROTO_FILES} ${TEMPLATE_FILES} ${CODEGEN_SCRIPT}
+      ${_gen_proto_origin} ${_gen_proto_dest}
     COMMENT "Generating ${ADAPTER_NAME} adapter"
     VERBATIM
   )
 
   add_custom_target(${ADAPTER_NAME}_codegen DEPENDS ${BUILD_OUTPUT})
+
+  # Ensure adapter codegen runs after proto generation
+  if(TARGET zlet_${ARG_ORIGIN}_proto_gen)
+    add_dependencies(${ADAPTER_NAME}_codegen zlet_${ARG_ORIGIN}_proto_gen)
+  endif()
+  if(TARGET zlet_${ARG_DEST}_proto_gen)
+    add_dependencies(${ADAPTER_NAME}_codegen zlet_${ARG_DEST}_proto_gen)
+  endif()
 
   zephyr_library_sources(${BUILD_OUTPUT} "src/${ADAPTER_NAME}_impl.c")
   add_dependencies(${ZEPHYR_CURRENT_LIBRARY} ${ADAPTER_NAME}_codegen)

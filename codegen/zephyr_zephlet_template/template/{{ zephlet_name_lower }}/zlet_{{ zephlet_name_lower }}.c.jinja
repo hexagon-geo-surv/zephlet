@@ -9,10 +9,10 @@
 
 LOG_MODULE_DECLARE(zlet_{{ zephlet_name_lower }}, CONFIG_ZEPHLET_{{ zephlet_name_upper }}_LOG_LEVEL);
 
-static void start(const struct zephlet *zephlet, struct msg_api_context *context)
+static void start(const struct zephlet *zephlet, struct zephlet_context *context)
 {
 	struct zlet_{{ zephlet_name_lower }}_data *data = zephlet->data;
-	struct msg_zephlet_status status;
+	struct zephlet_status status;
 	int ret = 0;
 
 	K_SPINLOCK(&data->lock) {
@@ -36,10 +36,10 @@ report:
 	zlet_{{ zephlet_name_lower }}_report_status(context, &status, K_MSEC(250));
 }
 
-static void stop(const struct zephlet *zephlet, struct msg_api_context *context)
+static void stop(const struct zephlet *zephlet, struct zephlet_context *context)
 {
 	struct zlet_{{ zephlet_name_lower }}_data *data = zephlet->data;
-	struct msg_zephlet_status status;
+	struct zephlet_status status;
 	int ret = 0;
 
 	K_SPINLOCK(&data->lock) {
@@ -61,10 +61,10 @@ report:
 	zlet_{{ zephlet_name_lower }}_report_status(context, &status, K_MSEC(250));
 }
 
-static void get_status(const struct zephlet *zephlet, struct msg_api_context *context)
+static void get_status(const struct zephlet *zephlet, struct zephlet_context *context)
 {
 	struct zlet_{{ zephlet_name_lower }}_data *data = zephlet->data;
-	struct msg_zephlet_status status;
+	struct zephlet_status status;
 
 	K_SPINLOCK(&data->lock) {
 		status = data->status;
@@ -78,8 +78,8 @@ report:
 	zlet_{{ zephlet_name_lower }}_report_status(context, &status, K_MSEC(250));
 }
 
-static void config(const struct zephlet *zephlet, struct msg_api_context *context,
-		   const struct msg_zlet_{{ zephlet_name_lower }}_config *config)
+static void config(const struct zephlet *zephlet, struct zephlet_context *context,
+		   const struct {{ zephlet_name_lower }}_config *config)
 {
 	struct zlet_{{ zephlet_name_lower }}_data *data = zephlet->data;
 
@@ -96,10 +96,10 @@ report:
 	zlet_{{ zephlet_name_lower }}_report_config(context, config, K_MSEC(250));
 }
 
-static void get_config(const struct zephlet *zephlet, struct msg_api_context *context)
+static void get_config(const struct zephlet *zephlet, struct zephlet_context *context)
 {
 	struct zlet_{{ zephlet_name_lower }}_data *data = zephlet->data;
-	struct msg_zlet_{{ zephlet_name_lower }}_config config;
+	struct {{ zephlet_name_lower }}_config config;
 
 	K_SPINLOCK(&data->lock) {
 		config = data->config;
@@ -113,10 +113,10 @@ report:
 	zlet_{{ zephlet_name_lower }}_report_config(context, &config, K_MSEC(250));
 }
 
-static void get_events(const struct zephlet *zephlet, struct msg_api_context *context)
+static void get_events(const struct zephlet *zephlet, struct zephlet_context *context)
 {
 	struct zlet_{{ zephlet_name_lower }}_data *data = zephlet->data;
-	struct msg_zlet_{{ zephlet_name_lower }}_events events;
+	struct {{ zephlet_name_lower }}_events events;
 
 	K_SPINLOCK(&data->lock) {
 		events = data->events;
@@ -159,9 +159,9 @@ static struct zlet_{{ zephlet_name_lower }}_api api = {
 };
 
 static struct zlet_{{ zephlet_name_lower }}_data data = {
-	.status = MSG_ZEPHLET_STATUS_INIT_ZERO,
-	.config = MSG_ZLET_{{ zephlet_name_upper }}_CONFIG_INIT_ZERO,
-	.events = MSG_ZLET_{{ zephlet_name_upper }}_EVENTS_INIT_ZERO
+	.status = ZEPHLET_STATUS_INIT_ZERO,
+	.config = {{ zephlet_name_upper }}_CONFIG_INIT_ZERO,
+	.events = {{ zephlet_name_upper }}_EVENTS_INIT_ZERO
 };
 
 int zlet_{{ zephlet_name_lower }}_init_fn(const struct zephlet *self)

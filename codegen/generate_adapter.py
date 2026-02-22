@@ -44,9 +44,53 @@ def snake_to_camel(name):
     return ''.join(word.capitalize() for word in name.split('_'))
 
 
-def discover_zephlets(zephlets_path):
+def _find_zephlet_msg(messages):
+    """Find the main zephlet message in a list of proto messages."""
+    # Old pattern: Msg*Zephlet or MsgZlet*
+    for message in messages:
+        if message.name.startswith('Msg') and (
+            message.name.endswith('Zephlet') or message.name.startswith('MsgZlet')
+        ):
+            return message
+    # New pattern: message with Invoke + Report sub-messages
+    skip_names = {'_', 'Empty', 'ZephletStatus', 'ZephletContext'}
+    for message in messages:
+        if message.name in skip_names:
+            continue
+        nested_names = set()
+        for elem in message.elements:
+            if hasattr(elem, 'name') and elem.__class__.__name__ == 'Message':
+                nested_names.add(elem.name)
+        if 'Invoke' in nested_names and 'Report' in nested_names:
+            return message
+    return None
+
+
+def _extract_report_metadata(zephlet_msg):
+    """Extract Report oneof name and fields from a zephlet message."""
+    report_msg = None
+    for element in zephlet_msg.elements:
+        if hasattr(element, 'name') and element.__class__.__name__ == 'Message':
+            if element.name == 'Report':
+                report_msg = element
+                break
+
+    if not report_msg:
+        return None, []
+
+    for element in report_msg.elements:
+        if element.__class__.__name__ == 'OneOf':
+            fields = [f for f in element.elements if hasattr(f, 'name')]
+            return element.name, fields
+
+    return None, []
+
+
+def discover_zephlets(zephlets_path, generated_protos_path=None):
     """
     Scan zephlets/* for proto files and extract metadata.
+    If generated_protos_path is provided, uses generated protos (which contain
+    Invoke/Report) instead of source base files.
     Returns: list of dicts with zephlet metadata
     """
     zephlets = []
@@ -65,13 +109,29 @@ def discover_zephlets(zephlets_path):
         if zephlet_name in ['shared']:
             continue
 
-        proto_path = zephlet_dir / f"zlet_{zephlet_name}.proto"
-        if not proto_path.exists():
-            proto_path = zephlet_dir / f"{zephlet_name}_zephlet.proto"
-        if not proto_path.exists():
-            proto_path = zephlet_dir / f"{zephlet_name}.proto"
+        # Find the proto to parse: prefer generated proto if available
+        proto_path = None
+        if generated_protos_path:
+            gen_dir = Path(generated_protos_path)
+            # Generated protos are at <build>/modules/zlet_<name>/zlet_<name>.proto
+            for pattern in [
+                gen_dir / f"zlet_{zephlet_name}" / f"zlet_{zephlet_name}.proto",
+                gen_dir / f"{zephlet_name}" / f"zlet_{zephlet_name}.proto",
+                gen_dir / f"zlet_{zephlet_name}" / f"{zephlet_name}.proto",
+            ]:
+                if pattern.exists():
+                    proto_path = pattern
+                    break
 
-        if not proto_path.exists():
+        # Fall back to source proto
+        if not proto_path:
+            for name in [f"zlet_{zephlet_name}.proto", f"{zephlet_name}_zephlet.proto", f"{zephlet_name}.proto"]:
+                candidate = zephlet_dir / name
+                if candidate.exists():
+                    proto_path = candidate
+                    break
+
+        if not proto_path:
             continue
 
         try:
@@ -81,48 +141,23 @@ def discover_zephlets(zephlets_path):
             parser = Parser()
             parsed = parser.parse(proto_content)
 
-            messages = []
-            for element in parsed.file_elements:
-                if hasattr(element, 'name') and element.__class__.__name__ == 'Message':
-                    messages.append(element)
+            messages = [e for e in parsed.file_elements
+                        if hasattr(e, 'name') and e.__class__.__name__ == 'Message']
 
-            zephlet_msg = None
-            for message in messages:
-                if message.name.startswith('Msg') and (
-                    message.name.endswith('Zephlet') or message.name.startswith('MsgZlet')
-                ):
-                    zephlet_msg = message
-                    break
-
+            zephlet_msg = _find_zephlet_msg(messages)
             if not zephlet_msg:
                 continue
 
-            report_msg = None
-            report_oneof_name = None
-            report_fields = []
-
-            for element in zephlet_msg.elements:
-                if hasattr(element, 'name') and element.__class__.__name__ == 'Message':
-                    if element.name == 'Report':
-                        report_msg = element
-                        break
-
-            if report_msg:
-                for element in report_msg.elements:
-                    if element.__class__.__name__ == 'OneOf':
-                        report_oneof_name = element.name
-                        for field in element.elements:
-                            if hasattr(field, 'name'):
-                                report_fields.append(field)
-                        break
-
-                if report_fields:
-                    zephlets.append({
-                        'name': zephlet_name,
-                        'proto_path': str(proto_path),
-                        'report_oneof': report_oneof_name,
-                        'report_fields': report_fields
-                    })
+            report_oneof_name, report_fields = _extract_report_metadata(zephlet_msg)
+            if report_fields:
+                zephlets.append({
+                    'name': zephlet_name,
+                    'proto_path': str(proto_path),
+                    'proto_msg_name': zephlet_msg.name,
+                    'pb_prefix': camel_to_snake(zephlet_msg.name),
+                    'report_oneof': report_oneof_name,
+                    'report_fields': report_fields
+                })
 
         except Exception as e:
             print(f"Warning: Failed to parse {proto_path}: {e}")
@@ -223,17 +258,10 @@ def suggest_destination_api(destination):
         parser = Parser()
         parsed = parser.parse(proto_content)
 
-        messages = []
-        for element in parsed.file_elements:
-            if hasattr(element, 'name') and element.__class__.__name__ == 'Message':
-                messages.append(element)
+        messages = [e for e in parsed.file_elements
+                    if hasattr(e, 'name') and e.__class__.__name__ == 'Message']
 
-        zephlet_msg = None
-        for message in messages:
-            if message.name.startswith('Msg') and message.name.endswith('Zephlet'):
-                zephlet_msg = message
-                break
-
+        zephlet_msg = _find_zephlet_msg(messages)
         if not zephlet_msg:
             return []
 
@@ -287,12 +315,20 @@ def build_adapter_context(origin, dest, selected_fields, dest_api_suggestions):
     # Build set of selected field names for template comparison
     selected_field_names = {f.name for f in selected_fields}
 
+    # Nanopb C prefix derived from proto message name
+    origin_pb_prefix = origin.get('pb_prefix', f"msg_zlet_{origin_base}")
+    origin_pb_prefix_upper = origin_pb_prefix.upper()
+    dest_pb_prefix = dest.get('pb_prefix', f"msg_zlet_{dest_base}")
+    dest_pb_prefix_upper = dest_pb_prefix.upper()
+
     context = {
         'origin_zephlet': origin_name,
         'origin_zephlet_upper': origin_name.upper(),
         'origin_zephlet_camel': origin_camel,
         'origin_base': origin_base,
         'origin_base_upper': origin_base.upper(),
+        'origin_pb_prefix': origin_pb_prefix,
+        'origin_pb_prefix_upper': origin_pb_prefix_upper,
         'origin_report_oneof': origin['report_oneof'],
         'origin_report_fields': origin['report_fields'],
         'selected_report_fields': selected_fields,
@@ -302,6 +338,8 @@ def build_adapter_context(origin, dest, selected_fields, dest_api_suggestions):
         'dest_zephlet_camel': dest_camel,
         'dest_base': dest_base,
         'dest_base_upper': dest_base.upper(),
+        'dest_pb_prefix': dest_pb_prefix,
+        'dest_pb_prefix_upper': dest_pb_prefix_upper,
         'adapter_name': adapter_name,
         'adapter_config': f"{origin_base.upper()}_TO_{dest_base.upper()}_ADAPTER",
         'listener_name': f"lis_{origin_name}_to_{dest_name}_adapter",
@@ -470,6 +508,7 @@ def _render_callback_skeleton(func_name, field, context, templates_dir):
         callback_prefix=context['callback_prefix'],
         field_name=field.name,
         origin_base=context['origin_base'],
+        origin_pb_prefix=context['origin_pb_prefix'],
         dest_base=context.get('dest_base', ''),
         dest_api_suggestions=context.get('dest_api_suggestions', []),
     )
@@ -717,6 +756,9 @@ def main():
                         help='Comma-separated report field names to handle (non-interactive mode)')
     parser.add_argument('--impl-only', action='store_true',
                         help='Only generate _impl.c (bootstrap mode)')
+    parser.add_argument('--generated-protos-path', default=None,
+                        help='Path to build dir containing generated protos '
+                             '(with Invoke/Report). Falls back to source protos.')
 
     args = parser.parse_args()
 
@@ -728,7 +770,7 @@ def main():
         sys.exit(1)
 
     print(f"Scanning zephlets in {args.zephlets_path}...")
-    zephlets = discover_zephlets(args.zephlets_path)
+    zephlets = discover_zephlets(args.zephlets_path, args.generated_protos_path)
 
     if not zephlets:
         print("No zephlets found")

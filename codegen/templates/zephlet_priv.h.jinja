@@ -6,10 +6,10 @@
 {%- for field in report_fields %}
 {%- if field.is_empty %}
 
-static inline int {{ zephlet_name }}_report_{{ field.name }}(const struct msg_api_context *context, k_timeout_t timeout)
+static inline int {{ zephlet_name }}_report_{{ field.name }}(const struct zephlet_context *context, k_timeout_t timeout)
 {
-	struct msg_{{ zephlet_name }}_report rpt = {
-		.which_{{ report_oneof_name }} = MSG_{{ zephlet_name_upper }}_REPORT_{{ field.name|upper }}_TAG
+	struct {{ pb_prefix }}_report rpt = {
+		.which_{{ report_oneof_name }} = {{ pb_prefix_upper }}_REPORT_{{ field.name|upper }}_TAG
 	};
 	if (context && context->correlation_id != 0) {
 		rpt.has_context = true;
@@ -18,12 +18,12 @@ static inline int {{ zephlet_name }}_report_{{ field.name }}(const struct msg_ap
 	return zbus_chan_pub(&chan_{{ zephlet_name }}_report, &rpt, timeout);
 }
 {%- else %}
-{%- if field.message_type == 'MsgZephletStatus' %}
+{%- if field.message_type == 'ZephletStatus' or field.message_type == 'MsgZephletStatus' %}
 
-static inline int {{ zephlet_name }}_report_{{ field.name }}(const struct msg_api_context *context, const struct msg_zephlet_status *status, k_timeout_t timeout)
+static inline int {{ zephlet_name }}_report_{{ field.name }}(const struct zephlet_context *context, const struct zephlet_status *status, k_timeout_t timeout)
 {
-	struct msg_{{ zephlet_name }}_report rpt = {
-		.which_{{ report_oneof_name }} = MSG_{{ zephlet_name_upper }}_REPORT_{{ field.name|upper }}_TAG,
+	struct {{ pb_prefix }}_report rpt = {
+		.which_{{ report_oneof_name }} = {{ pb_prefix_upper }}_REPORT_{{ field.name|upper }}_TAG,
 		.status = *status
 	};
 	if (context && context->correlation_id != 0) {
@@ -34,10 +34,10 @@ static inline int {{ zephlet_name }}_report_{{ field.name }}(const struct msg_ap
 }
 {%- elif field.message_type == 'Config' %}
 
-static inline int {{ zephlet_name }}_report_{{ field.name }}(const struct msg_api_context *context, const struct msg_{{ zephlet_name }}_config *config, k_timeout_t timeout)
+static inline int {{ zephlet_name }}_report_{{ field.name }}(const struct zephlet_context *context, const struct {{ pb_prefix }}_config *config, k_timeout_t timeout)
 {
-	struct msg_{{ zephlet_name }}_report rpt = {
-		.which_{{ report_oneof_name }} = MSG_{{ zephlet_name_upper }}_REPORT_{{ field.name|upper }}_TAG,
+	struct {{ pb_prefix }}_report rpt = {
+		.which_{{ report_oneof_name }} = {{ pb_prefix_upper }}_REPORT_{{ field.name|upper }}_TAG,
 		.config = *config
 	};
 	if (context && context->correlation_id != 0) {
@@ -48,10 +48,10 @@ static inline int {{ zephlet_name }}_report_{{ field.name }}(const struct msg_ap
 }
 {%- else %}
 
-static inline int {{ zephlet_name }}_report_{{ field.name }}(const struct msg_api_context *context, const struct msg_{{ zephlet_name }}_{{ field.message_type|camel_to_snake }} *{{ field.name }}, k_timeout_t timeout)
+static inline int {{ zephlet_name }}_report_{{ field.name }}(const struct zephlet_context *context, const struct {{ pb_prefix }}_{{ field.message_type|camel_to_snake }} *{{ field.name }}, k_timeout_t timeout)
 {
-	struct msg_{{ zephlet_name }}_report rpt = {
-		.which_{{ report_oneof_name }} = MSG_{{ zephlet_name_upper }}_REPORT_{{ field.name|upper }}_TAG,
+	struct {{ pb_prefix }}_report rpt = {
+		.which_{{ report_oneof_name }} = {{ pb_prefix_upper }}_REPORT_{{ field.name|upper }}_TAG,
 		.{{ field.name }} = *{{ field.name }}
 	};
 	if (context && context->correlation_id != 0) {
@@ -62,10 +62,10 @@ static inline int {{ zephlet_name }}_report_{{ field.name }}(const struct msg_ap
 }
 
 /* Async variant for events (no correlation to invoke) */
-static inline int {{ zephlet_name }}_report_{{ field.name }}_async(const struct msg_{{ zephlet_name }}_{{ field.message_type|camel_to_snake }} *{{ field.name }}, k_timeout_t timeout)
+static inline int {{ zephlet_name }}_report_{{ field.name }}_async(const struct {{ pb_prefix }}_{{ field.message_type|camel_to_snake }} *{{ field.name }}, k_timeout_t timeout)
 {
-	struct msg_{{ zephlet_name }}_report rpt = {
-		.which_{{ report_oneof_name }} = MSG_{{ zephlet_name_upper }}_REPORT_{{ field.name|upper }}_TAG,
+	struct {{ pb_prefix }}_report rpt = {
+		.which_{{ report_oneof_name }} = {{ pb_prefix_upper }}_REPORT_{{ field.name|upper }}_TAG,
 		.{{ field.name }} = *{{ field.name }}
 		/* has_context = false (default) */
 	};

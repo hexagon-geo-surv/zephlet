@@ -11,7 +11,7 @@
 LOG_MODULE_DECLARE({{ zephlet_name }}, CONFIG_ZEPHLET_{{ base_name_upper }}_LOG_LEVEL);
 
 /* CONTEXT CORRELATION PATTERN:
- * - All API functions receive struct msg_api_context *context
+ * - All API functions receive struct zephlet_context *context
  * - context->correlation_id: Request ID (caller sets)
  * - context->return_code: Set to 0 (success) or -errno (failure)
  * - report_*(context, data, timeout) - request-response (has_context=true)
@@ -29,10 +29,10 @@ LOG_MODULE_DECLARE({{ zephlet_name }}, CONFIG_ZEPHLET_{{ base_name_upper }}_LOG_
 
 {%- if method.report_field_name == 'status' %}
 {%- if method.name == 'start' %}
-static void start(const struct zephlet *zephlet, struct msg_api_context *context)
+static void start(const struct zephlet *zephlet, struct zephlet_context *context)
 {
 	struct {{ zephlet_name }}_data *data = zephlet->data;
-	struct msg_zephlet_status status;
+	struct zephlet_status status;
 
 	context->return_code = 0;  /* Set return_code (0=success, <0=errno) */
 
@@ -53,10 +53,10 @@ static void start(const struct zephlet *zephlet, struct msg_api_context *context
 }
 {%- elif method.name == 'stop' %}
 
-static void stop(const struct zephlet *zephlet, struct msg_api_context *context)
+static void stop(const struct zephlet *zephlet, struct zephlet_context *context)
 {
 	struct {{ zephlet_name }}_data *data = zephlet->data;
-	struct msg_zephlet_status status;
+	struct zephlet_status status;
 
 	context->return_code = 0;
 
@@ -74,10 +74,10 @@ static void stop(const struct zephlet *zephlet, struct msg_api_context *context)
 }
 {%- elif method.name == 'get_status' %}
 
-static void get_status(const struct zephlet *zephlet, struct msg_api_context *context)
+static void get_status(const struct zephlet *zephlet, struct zephlet_context *context)
 {
 	struct {{ zephlet_name }}_data *data = zephlet->data;
-	struct msg_zephlet_status status;
+	struct zephlet_status status;
 
 	context->return_code = 0;
 
@@ -90,13 +90,17 @@ static void get_status(const struct zephlet *zephlet, struct msg_api_context *co
 {%- else %}
 
 /* RPC returns {{ method.output_type }} (status) */
-static void {{ method.name }}(const struct zephlet *zephlet, struct msg_api_context *context
+static void {{ method.name }}(const struct zephlet *zephlet, struct zephlet_context *context
 {%- if method.input_type != 'Empty' -%}
-, const struct msg_{{ zephlet_name }}_{{ method.input_type|proto_type_to_snake }} *{{ method.input_type|proto_type_to_snake }}
+{%- if method.input_is_enum -%}
+, enum {{ pb_prefix }}_{{ method.input_type|proto_type_to_snake }} {{ method.input_type|proto_type_to_snake }}
+{%- else -%}
+, const struct {{ pb_prefix }}_{{ method.input_type|proto_type_to_snake }} *{{ method.input_type|proto_type_to_snake }}
+{%- endif -%}
 {%- endif -%})
 {
 	struct {{ zephlet_name }}_data *data = zephlet->data;
-	struct msg_zephlet_status status;
+	struct zephlet_status status;
 
 	context->return_code = 0;
 
@@ -111,7 +115,7 @@ static void {{ method.name }}(const struct zephlet *zephlet, struct msg_api_cont
 {%- elif method.report_field_name == 'config' %}
 {%- if method.name == 'config' %}
 
-static void config(const struct zephlet *zephlet, struct msg_api_context *context, const struct msg_{{ zephlet_name }}_config *config)
+static void config(const struct zephlet *zephlet, struct zephlet_context *context, const struct {{ pb_prefix }}_config *config)
 {
 	struct {{ zephlet_name }}_data *data = zephlet->data;
 
@@ -129,10 +133,10 @@ static void config(const struct zephlet *zephlet, struct msg_api_context *contex
 }
 {%- elif method.name == 'get_config' %}
 
-static void get_config(const struct zephlet *zephlet, struct msg_api_context *context)
+static void get_config(const struct zephlet *zephlet, struct zephlet_context *context)
 {
 	struct {{ zephlet_name }}_data *data = zephlet->data;
-	struct msg_{{ zephlet_name }}_config config;
+	struct {{ pb_prefix }}_config config;
 
 	context->return_code = 0;
 
@@ -145,13 +149,17 @@ static void get_config(const struct zephlet *zephlet, struct msg_api_context *co
 {%- else %}
 
 /* RPC returns {{ method.output_type }} (config) */
-static void {{ method.name }}(const struct zephlet *zephlet, struct msg_api_context *context
+static void {{ method.name }}(const struct zephlet *zephlet, struct zephlet_context *context
 {%- if method.input_type != 'Empty' -%}
-, const struct msg_{{ zephlet_name }}_{{ method.input_type|proto_type_to_snake }} *{{ method.input_type|proto_type_to_snake }}
+{%- if method.input_is_enum -%}
+, enum {{ pb_prefix }}_{{ method.input_type|proto_type_to_snake }} {{ method.input_type|proto_type_to_snake }}
+{%- else -%}
+, const struct {{ pb_prefix }}_{{ method.input_type|proto_type_to_snake }} *{{ method.input_type|proto_type_to_snake }}
+{%- endif -%}
 {%- endif -%})
 {
 	struct {{ zephlet_name }}_data *data = zephlet->data;
-	struct msg_{{ zephlet_name }}_config config;
+	struct {{ pb_prefix }}_config config;
 
 	context->return_code = 0;
 
@@ -166,10 +174,10 @@ static void {{ method.name }}(const struct zephlet *zephlet, struct msg_api_cont
 {%- elif method.report_field_name == 'events' and method.name == 'get_events' %}
 
 /* RPC returns {{ method.output_type }} - publish to report field: {{ method.report_field_name }} */
-static void get_events(const struct zephlet *zephlet, struct msg_api_context *context)
+static void get_events(const struct zephlet *zephlet, struct zephlet_context *context)
 {
 	struct {{ zephlet_name }}_data *data = zephlet->data;
-	struct msg_{{ zephlet_name }}_events events;
+	struct {{ pb_prefix }}_events events;
 
 	context->return_code = 0;
 
@@ -182,9 +190,13 @@ static void get_events(const struct zephlet *zephlet, struct msg_api_context *co
 {%- else %}
 
 /* RPC returns {{ method.output_type }} - publish to report field: {{ method.report_field_name }} */
-static void {{ method.name }}(const struct zephlet *zephlet, struct msg_api_context *context
+static void {{ method.name }}(const struct zephlet *zephlet, struct zephlet_context *context
 {%- if method.input_type != 'Empty' -%}
-, const struct msg_{{ zephlet_name }}_{{ method.input_type|proto_type_to_snake }} *{{ method.input_type|proto_type_to_snake }}
+{%- if method.input_is_enum -%}
+, enum {{ pb_prefix }}_{{ method.input_type|proto_type_to_snake }} {{ method.input_type|proto_type_to_snake }}
+{%- else -%}
+, const struct {{ pb_prefix }}_{{ method.input_type|proto_type_to_snake }} *{{ method.input_type|proto_type_to_snake }}
+{%- endif -%}
 {%- endif -%})
 {
 	struct {{ zephlet_name }}_data *data = zephlet->data;
@@ -199,7 +211,7 @@ static void {{ method.name }}(const struct zephlet *zephlet, struct msg_api_cont
 	/* Output-streaming RPC: publish events from async contexts (timer/IRQ) */
 	/* Pattern example:
 	 *   void timer_handler(struct k_timer *timer) {
-	 *       struct msg_{{ zephlet_name }}_{{ method.report_field_name }} event = {...};
+	 *       struct {{ pb_prefix }}_{{ method.report_field_name }} event = {...};
 	 *       {{ zephlet_name }}_report_{{ method.report_field_name }}_async(&event, K_NO_WAIT);
 	 *   }
 	 */
@@ -219,7 +231,14 @@ static void {{ method.name }}(const struct zephlet *zephlet, struct msg_api_cont
 {%- for field in invoke_fields %}
 
 /* Fallback: No zephlet definition found, using invoke fields */
-static void {{ field.name }}(const struct zephlet *zephlet, struct msg_api_context *context{% if not field.is_empty %}, const struct msg_{{ zephlet_name }}_{{ field.message_type|camel_to_snake }} *{{ field.message_type|camel_to_snake }}{% endif %})
+static void {{ field.name }}(const struct zephlet *zephlet, struct zephlet_context *context
+{%- if not field.is_empty -%}
+{%- if field.is_enum -%}
+, enum {{ pb_prefix }}_{{ field.message_type|camel_to_snake }} {{ field.message_type|camel_to_snake }}
+{%- else -%}
+, const struct {{ pb_prefix }}_{{ field.message_type|camel_to_snake }} *{{ field.message_type|camel_to_snake }}
+{%- endif -%}
+{%- endif -%})
 {
 	struct {{ zephlet_name }}_data *data = zephlet->data;
 
@@ -264,12 +283,12 @@ static struct {{ zephlet_name }}_api api = {
 };
 
 static struct {{ zephlet_name }}_data data = {
-	.status = MSG_ZEPHLET_STATUS_INIT_ZERO,
+	.status = ZEPHLET_STATUS_INIT_ZERO,
 {%- if has_config %}
-	.config = MSG_{{ zephlet_name_upper }}_CONFIG_INIT_ZERO,
+	.config = {{ pb_prefix_upper }}_CONFIG_INIT_ZERO,
 {%- endif %}
 {%- if has_events %}
-	.events = MSG_{{ zephlet_name_upper }}_EVENTS_INIT_ZERO
+	.events = {{ pb_prefix_upper }}_EVENTS_INIT_ZERO
 {%- endif %}
 };
 

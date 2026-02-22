@@ -6,43 +6,18 @@ import "zephlet.proto";
 option (nanopb_fileopt).anonymous_oneof = true;
 option (nanopb_fileopt).long_names = false;
 
-message MsgZlet{{ zephlet_name_pascal }} {
-    message Config {
-        // TODO: Add configuration fields specific to {{ zephlet_name }}
-    }
+message {{ zephlet_name_pascal }} {
+  message Config {
+    /* TODO: Add configuration fields specific to {{ zephlet_name }} */
+  }
 
-    message Events {
-        // TODO: Add event fields specific to {{ zephlet_name }}
-    }
-
-    message Invoke {
-        optional MsgAPIContext context = 999;  /* For correlation tracking */
-        oneof {{ zephlet_name_lower }}_invoke {
-            Empty start = 1;
-            Empty stop = 2;
-            Empty get_status = 3;
-            Config config = 4;
-            Empty get_config = 5;
-            Empty get_events = 6;
-        }
-    }
-
-    message Report {
-        optional MsgAPIContext context = 999;  /* Present only for invoke responses */
-        oneof {{ zephlet_name_lower }}_report {
-            MsgZephletStatus status = 1;
-            Config config = 2;
-            Events events = 3;
-        }
-    }
+  message Events {
+    int32 timestamp = 1;
+    /* TODO: Add event fields specific to {{ zephlet_name }} */
+  }
 }
 
 service {{ zephlet_name_pascal }} {
-    rpc start (Empty) returns (MsgZephletStatus);
-    rpc stop (Empty) returns (MsgZephletStatus);
-    rpc get_status (Empty) returns (MsgZephletStatus);
-    rpc config (MsgZlet{{ zephlet_name_pascal }}.Config) returns (MsgZlet{{ zephlet_name_pascal }}.Config);
-    rpc get_config (Empty) returns (MsgZlet{{ zephlet_name_pascal }}.Config);
-    /* This will report the {{ zephlet_name_lower }} events */
-    rpc get_events (Empty) returns (stream MsgZlet{{ zephlet_name_pascal }}.Events);
+  option (zephlet.extends_base) = true; /* Extends base zlet */
+  /* Custom RPCs below (base RPCs are auto-generated) */
 }

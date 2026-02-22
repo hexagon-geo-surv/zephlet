@@ -1,6 +1,6 @@
 void {{ callback_prefix }}_on_report_{{ field_name }}(
 	const struct zbus_channel *chan,
-	const struct msg_zlet_{{ origin_base }}_report *report)
+	const struct {{ origin_pb_prefix }}_report *report)
 {
 #warning "{{ callback_prefix }}_on_report_{{ field_name }} not implemented"
 {%- if dest_api_suggestions %}

@@ -16,18 +16,18 @@ LOG_MODULE_DECLARE(adapter, CONFIG_ADAPTERS_LOG_LEVEL);
 {% for field in selected_report_fields %}
 __weak void {{ callback_prefix }}_on_report_{{ field.name }}(
 	const struct zbus_channel *chan,
-	const struct msg_zlet_{{ origin_base }}_report *report)
+	const struct {{ origin_pb_prefix }}_report *report)
 {
 }
 
 {% endfor %}
 static void {{ function_name }}(const struct zbus_channel *chan, const void *msg)
 {
-	const struct msg_zlet_{{ origin_base }}_report *report = zbus_chan_const_msg(chan);
+	const struct {{ origin_pb_prefix }}_report *report = zbus_chan_const_msg(chan);
 
 	switch (report->which_{{ origin_report_oneof }}) {
 {%- for field in origin_report_fields %}
-	case MSG_ZLET_{{ origin_base_upper }}_REPORT_{{ field.name | upper }}_TAG:
+	case {{ origin_pb_prefix_upper }}_REPORT_{{ field.name | upper }}_TAG:
 {%- if field.name in selected_field_names %}
 		{{ callback_prefix }}_on_report_{{ field.name }}(chan, report);
 {%- endif %}
