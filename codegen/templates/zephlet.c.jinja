@@ -35,12 +35,14 @@ static K_SEM_DEFINE({{ zephlet_name }}_report_sem, 0, 1);
  * Blocking call shared state — safe because:
  * 1. {{ zephlet_name }}_sem serializes all blocking calls (one at a time)
  * 2. lis_{{ zephlet_name }} is a sync listener (runs in publisher's thread)
- * So: helper sets statics → publishes → api_handler reads → same thread.
+ * So: helper sets self → publishes → api_handler reads → same thread.
  * deadline is not in the invoke message (kernel type, not serializable).
  */
-static struct {{ pb_prefix }}_report {{ zephlet_name }}_sync_report;
-static uint32_t {{ zephlet_name }}_expected_cid;
-static k_timepoint_t {{ zephlet_name }}_deadline;
+static struct {
+	struct {{ pb_prefix }}_report sync_report;
+	uint32_t expected_cid;
+	k_timepoint_t deadline;
+} self;
 
 static uint32_t {{ zephlet_name }}_next_correlation_id(void)
 {
@@ -95,7 +97,7 @@ static void api_handler(const struct zbus_channel *chan)
 
 	struct {{ zephlet_name }}_context ctx = {
 		.zephlet = impl,
-		.timeout = ivk->has_result ? {{ zephlet_name }}_deadline
+		.timeout = ivk->has_result ? self.deadline
 					   : sys_timepoint_calc(K_FOREVER),
 	};
 
@@ -136,8 +138,8 @@ static void {{ zephlet_name }}_sync_report_listener(const struct zbus_channel *c
 	const struct {{ pb_prefix }}_report *msg = zbus_chan_const_msg(chan);
 
 	if (msg->has_result &&
-	    msg->result.correlation_id == {{ zephlet_name }}_expected_cid) {
-		{{ zephlet_name }}_sync_report = *msg;
+	    msg->result.correlation_id == self.expected_cid) {
+		self.sync_report = *msg;
 		k_sem_give(&{{ zephlet_name }}_report_sem);
 	}
 }
@@ -161,8 +163,8 @@ struct {{ pb_prefix }}_report {{ zephlet_name }}_{{ method.name }}(k_timeout_t t
 	}
 
 	uint32_t cid = {{ zephlet_name }}_next_correlation_id();
-	{{ zephlet_name }}_expected_cid = cid;
-	{{ zephlet_name }}_deadline = sys_timepoint_calc(timeout);
+	self.expected_cid = cid;
+	self.deadline = sys_timepoint_calc(timeout);
 	k_sem_reset(&{{ zephlet_name }}_report_sem);
 
 	struct {{ pb_prefix }}_invoke ivk = {
@@ -185,7 +187,7 @@ struct {{ pb_prefix }}_report {{ zephlet_name }}_{{ method.name }}(k_timeout_t t
 		report.result.correlation_id = cid;
 		report.result.return_code = -ETIMEDOUT;
 	} else {
-		report = {{ zephlet_name }}_sync_report;
+		report = self.sync_report;
 	}
 
 	k_sem_give(&{{ zephlet_name }}_sem);
@@ -205,8 +207,8 @@ struct {{ pb_prefix }}_report {{ zephlet_name }}_config_set({% for cfg in config
 	}
 
 	uint32_t cid = {{ zephlet_name }}_next_correlation_id();
-	{{ zephlet_name }}_expected_cid = cid;
-	{{ zephlet_name }}_deadline = sys_timepoint_calc(timeout);
+	self.expected_cid = cid;
+	self.deadline = sys_timepoint_calc(timeout);
 	k_sem_reset(&{{ zephlet_name }}_report_sem);
 
 	struct {{ pb_prefix }}_invoke ivk = {
@@ -234,7 +236,7 @@ struct {{ pb_prefix }}_report {{ zephlet_name }}_config_set({% for cfg in config
 		report.result.correlation_id = cid;
 		report.result.return_code = -ETIMEDOUT;
 	} else {
-		report = {{ zephlet_name }}_sync_report;
+		report = self.sync_report;
 	}
 
 	k_sem_give(&{{ zephlet_name }}_sem);
@@ -254,8 +256,8 @@ struct {{ pb_prefix }}_report {{ zephlet_name }}_{{ method.name }}(enum {{ pb_pr
 	}
 
 	uint32_t cid = {{ zephlet_name }}_next_correlation_id();
-	{{ zephlet_name }}_expected_cid = cid;
-	{{ zephlet_name }}_deadline = sys_timepoint_calc(timeout);
+	self.expected_cid = cid;
+	self.deadline = sys_timepoint_calc(timeout);
 	k_sem_reset(&{{ zephlet_name }}_report_sem);
 
 	struct {{ pb_prefix }}_invoke ivk = {
@@ -279,7 +281,7 @@ struct {{ pb_prefix }}_report {{ zephlet_name }}_{{ method.name }}(enum {{ pb_pr
 		report.result.correlation_id = cid;
 		report.result.return_code = -ETIMEDOUT;
 	} else {
-		report = {{ zephlet_name }}_sync_report;
+		report = self.sync_report;
 	}
 
 	k_sem_give(&{{ zephlet_name }}_sem);
@@ -299,8 +301,8 @@ struct {{ pb_prefix }}_report {{ zephlet_name }}_{{ method.name }}(const struct 
 	}
 
 	uint32_t cid = {{ zephlet_name }}_next_correlation_id();
-	{{ zephlet_name }}_expected_cid = cid;
-	{{ zephlet_name }}_deadline = sys_timepoint_calc(timeout);
+	self.expected_cid = cid;
+	self.deadline = sys_timepoint_calc(timeout);
 	k_sem_reset(&{{ zephlet_name }}_report_sem);
 
 	struct {{ pb_prefix }}_invoke ivk = {
@@ -324,7 +326,7 @@ struct {{ pb_prefix }}_report {{ zephlet_name }}_{{ method.name }}(const struct 
 		report.result.correlation_id = cid;
 		report.result.return_code = -ETIMEDOUT;
 	} else {
-		report = {{ zephlet_name }}_sync_report;
+		report = self.sync_report;
 	}
 
 	k_sem_give(&{{ zephlet_name }}_sem);
