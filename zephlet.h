@@ -28,6 +28,6 @@ struct zephlet {
 		.data = _data}
 
 #define ZEPHLET_CALL_OK(report) \
-	((report).has_context && (report).context.return_code == 0)
+	((report).has_result && (report).result.return_code == 0)
 
 #endif /* MODULES_ZEPHLETS_SHARED_ZEPHLET_H */

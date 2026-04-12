@@ -41,13 +41,13 @@
 **Generated (build):** zlet_<name>_interface.h (data/API/inline funcs), zlet_<name>_interface.c (channels/dispatcher/registration), zlet_<name>.h (report helpers), zlet_<name>.pb.h/.pb.c (nanopb)
 **Bootstrap:** CMake auto-generates .c once via `--impl-only` if missing. After initial creation, only manually edit .c.
 
-**\_interface.h:** `<zephlet>_data` (state+spinlock), `<zephlet>_api` (func ptrs with context param), blocking call declarations
-**\_interface.c:** Dispatcher (switch/case oneof tags + default, sets `context.invoke_tag`), blocking call implementations (semaphore-serialized, auto-correlated), `wait_report_sync`, `<zephlet>_set_implementation()`
-**.c:** Init func (sets is_ready), API impls (context param), K_SPINLOCK updates, pub reports with context+ret, ends with `ZEPHLET_DEFINE(<zephlet>, init_fn, &api, &data)`. Use `report_*_async()` for events. RPCs returning Empty must call `report_empty(context)`.
+**\_interface.h:** `<zephlet>_data` (state+spinlock), `<zephlet>_context` (self+response), `<zephlet>_api` (func ptrs returning int, take `<zephlet>_context *ctx`), blocking call declarations
+**\_interface.c:** Dispatcher (switch/case oneof tags, common result injection + publish after switch), blocking call implementations (semaphore-serialized, auto-correlated), `<zephlet>_set_implementation()`
+**.c:** Init func (sets is_ready), API impls return int, fill `ctx->response`, K_SPINLOCK updates, ends with `ZEPHLET_DEFINE(<zephlet>, init_fn, &api, &data)`. Interface handles publishing. Use `report_*_async()` for async events only.
 **Shared:** `struct zephlet` + `ZEPHLET_DEFINE()` + `ZEPHLET_CALL_OK()` → `STRUCT_SECTION_ITERABLE` discovery
 
-**Blocking API (gRPC-style):** All unary RPCs are blocking. `struct <report> <zephlet>_<cmd>([params...], k_timeout_t)`. Returns report by value. Use `ZEPHLET_CALL_OK(report)` to check success. On error: `report.context.return_code` has -ETIMEDOUT, -EBUSY, -EALREADY, etc. `report.context.invoke_tag` identifies which RPC produced the response. All standard lifecycle RPCs including `get_last_event` are blocking.
-**Report helpers (impl-side):** `int <zephlet>_report_*(context, [data...], k_timeout_t)`. Async: `int <zephlet>_report_*_async([data...], k_timeout_t)` for events/timers.
+**Blocking API (gRPC-style):** All unary RPCs are blocking. `struct <report> <zephlet>_<cmd>([params...], k_timeout_t)`. Returns report by value. Use `ZEPHLET_CALL_OK(report)` to check success. On error: `report.result.return_code` has -ETIMEDOUT, -EBUSY, -EALREADY, etc. `report.result.invoke_tag` identifies which RPC produced the response.
+**Async helpers (impl-side):** `int <zephlet>_report_*_async([data...], k_timeout_t)` for events/timers (has_result=false).
 **Advanced:** `ZEPHLET_OBSERVE_REPORT` + `wait_report` still available for listener patterns.
 
 ### Adapters
@@ -65,7 +65,7 @@ Uses `ZBUS_ASYNC_LISTENER_DEFINE()` + `ZBUS_CHAN_ADD_OBS(priority=3)`. Kconfig t
 
 **Field validation:** `validate_field_numbers()` enforces reserved ranges at build time. Checks duplicates, standard names at reserved numbers (fails build), warns on gaps (non-fatal). Actionable error messages guide fixes.
 
-**Request-response context:** `ZephletContext {correlation_id, return_code, invoke_tag}` enables invoke-report correlation + error propagation. `optional ZephletContext context = 999` in Invoke/Report. Blocking calls auto-generate correlation_id and set invoke_tag. return_code follows POSIX errno (0=success, <0=error). `has_context` distinguishes responses from async events. `invoke_tag` identifies which RPC produced the response. `ZEPHLET_CALL_OK(report)` checks `has_context && return_code == 0`.
+**Request-response result:** `ZephletResult {correlation_id, return_code, invoke_tag}` enables invoke-report correlation + error propagation. `optional ZephletResult result = 999` in Invoke/Report. Blocking calls auto-generate correlation_id and set invoke_tag. return_code follows POSIX errno (0=success, <0=error). `has_result` distinguishes responses from async events. `invoke_tag` identifies which RPC produced the response. `ZEPHLET_CALL_OK(report)` checks `has_result && return_code == 0`.
 
 **Lifecycle state:** `MsgZephletStatus {is_running, is_ready}`. `is_ready` set by init (SYS_INIT), `is_running` controlled by start/stop. Init happens once, start/stop multiple times.
 
@@ -128,7 +128,7 @@ Via Kconfig in `prj.conf`:
 
 ## Data Flow
 
-Init: init_fn calls init() (sets is_ready) → register impl. Blocking call: `<zlet>_start(timeout)` → sem_take → auto correlation_id → pub invoke (with context+invoke_tag) → wait_report_sync (filters tag+invoke_tag+correlation_id) → sem_give → return report by value. Async events: timer → report_*_async() (no context) → observers see has_context=false. Error: -EBUSY (sem), -ETIMEDOUT (wait), or app error in return_code.
+Init: init_fn calls init() (sets is_ready) → register impl. Blocking call: `<zlet>_start(timeout)` → sem_take → auto correlation_id → pub invoke (with result+invoke_tag) → wait_report_sync (filters tag+invoke_tag+correlation_id) → sem_give → return report by value. Async events: timer → report_*_async() (no result) → observers see has_result=false. Error: -EBUSY (sem), -ETIMEDOUT (wait), or app error in return_code.
 
 ## Principles
 
@@ -158,7 +158,7 @@ Script: `codegen/generate_zephlet.py`. Proto → \_interface.h/\_interface.c/<ze
 
 **RPC validation:** Strict type checking - `returns MsgZephletStatus` → `report_status()`, `returns Config` → `report_config()`, `returns Events (stream)` → `report_events()`. Validates RPC return types match Invoke/Report fields.
 
-**Helper header:** `<zephlet>.h` (not `_priv.h`) with `<zephlet>_report_*()` helpers. Wraps zbus_chan_pub. Type mapping: MsgZephletStatus→ptr, Config→ptr, Empty→no params, CamelCase→snake_case.
+**Helper header:** `<zephlet>.h` with `<zephlet>_report_*_async()` helpers only (for async events). Interface layer handles all correlated report publishing.
 
 **Templates:** `codegen/templates/` - 6 Jinja2 templates (zephlet.h→_interface.h, zephlet.c→_interface.c, zephlet_priv.h→.h, zephlet_impl.c→.c, adapter.c, adapter_kconfig). Filters: `|camel_to_snake`, `|upper`, `|lower`. Copier template: `zephyr_zephlet_template/` (initial 5 files).
 

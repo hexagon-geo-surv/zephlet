@@ -140,7 +140,7 @@ def map_proto_type_to_c(proto_type: str) -> str:
         'Empty': 'empty',
         'MsgZephletStatus': 'msg_zephlet_status',
         'ZephletStatus': 'zephlet_status',
-        'ZephletContext': 'zephlet_context',
+        'ZephletResult': 'zephlet_result',
     }
     return mapping.get(proto_type, proto_type)
 
@@ -375,7 +375,7 @@ def parse_zephlet_proto(proto_path: str, zephlet_name: str, module_dir: str, out
     if not zephlet_msg:
         # New pattern: message containing Invoke + Report sub-messages
         for message in messages:
-            if message.name in ('_', 'Empty', 'ZephletStatus', 'ZephletContext'):
+            if message.name in ('_', 'Empty', 'ZephletStatus', 'ZephletResult'):
                 continue
             nested_names = set()
             for elem in message.elements:
@@ -585,6 +585,12 @@ def parse_zephlet_proto(proto_path: str, zephlet_name: str, module_dir: str, out
 
     # Validate zephlet consistency (raises ValueError on failure)
     validate_zephlet_consistency(rpc_methods, report_fields, invoke_fields, zephlet_name)
+
+    # Enrich invoke_fields with report_field_name from rpc_methods
+    rpc_by_name = {m['name']: m for m in rpc_methods}
+    for field in invoke_fields:
+        rpc = rpc_by_name.get(field['name'])
+        field['report_field_name'] = rpc['report_field_name'] if rpc else None
 
     # Nanopb C prefix: derived from proto message name
     # MsgZletTick → msg_zlet_tick, Tick → tick

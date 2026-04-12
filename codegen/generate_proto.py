@@ -184,14 +184,14 @@ def extract_nested_types(message):
 
 # --- Type qualification ---
 
-BASE_TYPES = {'Empty', 'ZephletStatus', 'ZephletContext'}
+BASE_TYPES = {'Empty', 'ZephletStatus', 'ZephletResult'}
 SCHEMA_PLACEHOLDER_TYPES = {'Config', 'Events'}
 
 
 def qualify_type(type_name, msg_name, nested_type_names):
     """
     Qualify a type reference with the zephlet message name.
-    - Base types (Empty, ZephletStatus, ZephletContext) stay unqualified.
+    - Base types (Empty, ZephletStatus, ZephletResult) stay unqualified.
     - Already-qualified types (containing '.') stay as-is.
     - Schema placeholders and nested types become Msg.Type.
     """
@@ -255,7 +255,7 @@ def main():
     # --- Extract base file information ---
 
     # Find top-level zephlet message (skip utility types)
-    skip_names = {'_', 'Empty', 'ZephletStatus', 'ZephletContext',
+    skip_names = {'_', 'Empty', 'ZephletStatus', 'ZephletResult',
                   'Invoke', 'Report', 'Config', 'Events'}
     base_messages = find_elements_by_type(base_ast.file_elements, 'Message')
     zephlet_msg = None

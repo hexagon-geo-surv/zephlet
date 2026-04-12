@@ -21,15 +21,21 @@ struct {{ zephlet_name }}_data {
 {%- endif %}
 };
 
+struct {{ zephlet_name }}_context {
+	const struct zephlet *zephlet;
+	struct {{ pb_prefix }}_report response;
+	k_timepoint_t timeout;
+};
+
 struct {{ zephlet_name }}_api {
 {%- for field in invoke_fields %}
 {%- if field.is_empty %}
-	void (*{{ field.name }})(const struct zephlet *zephlet, struct zephlet_context *context);
+	int (*{{ field.name }})(struct {{ zephlet_name }}_context *ctx);
 {%- elif field.is_enum %}
-	void (*{{ field.name }})(const struct zephlet *zephlet, struct zephlet_context *context,
+	int (*{{ field.name }})(struct {{ zephlet_name }}_context *ctx,
 	                         enum {{ pb_prefix }}_{{ field.message_type|camel_to_snake }} {{ field.message_type|camel_to_snake }});
 {%- else %}
-	void (*{{ field.name }})(const struct zephlet *zephlet, struct zephlet_context *context,
+	int (*{{ field.name }})(struct {{ zephlet_name }}_context *ctx,
 	                         const struct {{ pb_prefix }}_{{ field.message_type|camel_to_snake }} *{{ field.message_type|camel_to_snake }});
 {%- endif %}
 {%- endfor %}

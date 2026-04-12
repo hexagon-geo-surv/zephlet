@@ -12,7 +12,7 @@ LOG_MODULE_REGISTER({{ zephlet_name }}, CONFIG_ZEPHLET_{{ base_name_upper }}_LOG
 /* Sync listener: captures matching report for blocking callers */
 static void {{ zephlet_name }}_sync_report_listener(const struct zbus_channel *chan);
 
-ZBUS_LISTENER_DEFINE_WITH_ENABLE(lis_{{ zephlet_name }}_sync, {{ zephlet_name }}_sync_report_listener, false);
+ZBUS_LISTENER_DEFINE_WITH_ENABLE(lis_{{ zephlet_name }}_sync, {{ zephlet_name }}_sync_report_listener, true);
 
 ZBUS_CHAN_DEFINE(chan_{{ zephlet_name }}_invoke, struct {{ pb_prefix }}_invoke, NULL, NULL,
 		 ZBUS_OBSERVERS(lis_{{ zephlet_name }}), {{ pb_prefix_upper }}_INVOKE_INIT_DEFAULT);
@@ -31,9 +31,16 @@ static K_SEM_DEFINE({{ zephlet_name }}_sem, 1, 1);
 /* Report signal: given by sync listener when matching report arrives */
 static K_SEM_DEFINE({{ zephlet_name }}_report_sem, 0, 1);
 
-/* Sync report storage: written by listener, read by blocking caller */
+/*
+ * Blocking call shared state — safe because:
+ * 1. {{ zephlet_name }}_sem serializes all blocking calls (one at a time)
+ * 2. lis_{{ zephlet_name }} is a sync listener (runs in publisher's thread)
+ * So: helper sets statics → publishes → api_handler reads → same thread.
+ * deadline is not in the invoke message (kernel type, not serializable).
+ */
 static struct {{ pb_prefix }}_report {{ zephlet_name }}_sync_report;
 static uint32_t {{ zephlet_name }}_expected_cid;
+static k_timepoint_t {{ zephlet_name }}_deadline;
 
 static uint32_t {{ zephlet_name }}_next_correlation_id(void)
 {
@@ -62,8 +69,8 @@ static void api_handler(const struct zbus_channel *chan)
 {
 	struct {{ zephlet_name }}_api *api;
 	const struct {{ pb_prefix }}_invoke *ivk;
-	struct zephlet_context context_copy;
-	struct zephlet_context *context;
+	struct zephlet_result result_copy;
+	struct zephlet_result *result;
 
 	if (impl == NULL) {
 		LOG_ERR("Zephlet implementation required!");
@@ -78,24 +85,33 @@ static void api_handler(const struct zbus_channel *chan)
 	api = impl->api;
 	ivk = zbus_chan_const_msg(chan);
 
-	if (ivk->has_context) {
-		context_copy = ivk->context;
-		context_copy.invoke_tag = ivk->which_{{ invoke_oneof_name }};
-		context = &context_copy;
+	if (ivk->has_result) {
+		result_copy = ivk->result;
+		result_copy.invoke_tag = ivk->which_{{ invoke_oneof_name }};
+		result = &result_copy;
 	} else {
-		context = NULL;
+		result = NULL;
 	}
+
+	struct {{ zephlet_name }}_context ctx = {
+		.zephlet = impl,
+		.timeout = ivk->has_result ? {{ zephlet_name }}_deadline
+					   : sys_timepoint_calc(K_FOREVER),
+	};
 
 	switch (ivk->which_{{ invoke_oneof_name }}) {
 {%- for field in invoke_fields %}
 	case {{ pb_prefix_upper }}_INVOKE_{{ field.name|upper }}_TAG:
 		if (api->{{ field.name }}) {
+{%- if field.report_field_name %}
+			ctx.response.which_{{ report_oneof_name }} = {{ pb_prefix_upper }}_REPORT_{{ field.report_field_name|upper }}_TAG;
+{%- endif %}
 {%- if field.is_empty %}
-			api->{{ field.name }}(impl, context);
+			result->return_code = api->{{ field.name }}(&ctx);
 {%- elif field.is_enum %}
-			api->{{ field.name }}(impl, context, ivk->{{ field.name }});
+			result->return_code = api->{{ field.name }}(&ctx, ivk->{{ field.name }});
 {%- else %}
-			api->{{ field.name }}(impl, context, &ivk->{{ field.name }});
+			result->return_code = api->{{ field.name }}(&ctx, &ivk->{{ field.name }});
 {%- endif %}
 		}
 		break;
@@ -103,6 +119,13 @@ static void api_handler(const struct zbus_channel *chan)
 	default:
 		LOG_WRN("Unknown invoke tag: %d", ivk->which_{{ invoke_oneof_name }});
 		break;
+	}
+
+	/* Inject result and publish (tag != 0 means a handler ran) */
+	if (result && ctx.response.which_{{ report_oneof_name }} != 0) {
+		ctx.response.has_result = true;
+		ctx.response.result = *result;
+		zbus_chan_pub(&chan_{{ zephlet_name }}_report, &ctx.response, K_MSEC(250));
 	}
 }
 
@@ -112,8 +135,8 @@ static void {{ zephlet_name }}_sync_report_listener(const struct zbus_channel *c
 {
 	const struct {{ pb_prefix }}_report *msg = zbus_chan_const_msg(chan);
 
-	if (msg->has_context &&
-	    msg->context.correlation_id == {{ zephlet_name }}_expected_cid) {
+	if (msg->has_result &&
+	    msg->result.correlation_id == {{ zephlet_name }}_expected_cid) {
 		{{ zephlet_name }}_sync_report = *msg;
 		k_sem_give(&{{ zephlet_name }}_report_sem);
 	}
@@ -132,34 +155,35 @@ struct {{ pb_prefix }}_report {{ zephlet_name }}_{{ method.name }}(k_timeout_t t
 	struct {{ pb_prefix }}_report report = {0};
 
 	if (k_sem_take(&{{ zephlet_name }}_sem, timeout) != 0) {
-		report.has_context = true;
-		report.context.return_code = -EBUSY;
+		report.has_result = true;
+		report.result.return_code = -EBUSY;
 		return report;
 	}
 
 	uint32_t cid = {{ zephlet_name }}_next_correlation_id();
 	{{ zephlet_name }}_expected_cid = cid;
+	{{ zephlet_name }}_deadline = sys_timepoint_calc(timeout);
 	k_sem_reset(&{{ zephlet_name }}_report_sem);
 
 	struct {{ pb_prefix }}_invoke ivk = {
 		.which_{{ invoke_oneof_name }} = {{ invoke_tag }},
-		.has_context = true,
-		.context = { .correlation_id = cid }
+		.has_result = true,
+		.result = { .correlation_id = cid }
 	};
 
 	int err = zbus_chan_pub(&chan_{{ zephlet_name }}_invoke, &ivk, timeout);
 	if (err != 0) {
-		report.has_context = true;
-		report.context.return_code = err;
+		report.has_result = true;
+		report.result.return_code = err;
 		k_sem_give(&{{ zephlet_name }}_sem);
 		return report;
 	}
 
 	if (k_sem_take(&{{ zephlet_name }}_report_sem, timeout) != 0) {
-		report.has_context = true;
-		report.context.invoke_tag = {{ invoke_tag }};
-		report.context.correlation_id = cid;
-		report.context.return_code = -ETIMEDOUT;
+		report.has_result = true;
+		report.result.invoke_tag = {{ invoke_tag }};
+		report.result.correlation_id = cid;
+		report.result.return_code = -ETIMEDOUT;
 	} else {
 		report = {{ zephlet_name }}_sync_report;
 	}
@@ -175,13 +199,14 @@ struct {{ pb_prefix }}_report {{ zephlet_name }}_config_set({% for cfg in config
 	struct {{ pb_prefix }}_report report = {0};
 
 	if (k_sem_take(&{{ zephlet_name }}_sem, timeout) != 0) {
-		report.has_context = true;
-		report.context.return_code = -EBUSY;
+		report.has_result = true;
+		report.result.return_code = -EBUSY;
 		return report;
 	}
 
 	uint32_t cid = {{ zephlet_name }}_next_correlation_id();
 	{{ zephlet_name }}_expected_cid = cid;
+	{{ zephlet_name }}_deadline = sys_timepoint_calc(timeout);
 	k_sem_reset(&{{ zephlet_name }}_report_sem);
 
 	struct {{ pb_prefix }}_invoke ivk = {
@@ -191,23 +216,23 @@ struct {{ pb_prefix }}_report {{ zephlet_name }}_config_set({% for cfg in config
 			.{{ cfg.name }} = {{ cfg.name }},
 {%- endfor %}
 		},
-		.has_context = true,
-		.context = { .correlation_id = cid }
+		.has_result = true,
+		.result = { .correlation_id = cid }
 	};
 
 	int err = zbus_chan_pub(&chan_{{ zephlet_name }}_invoke, &ivk, timeout);
 	if (err != 0) {
-		report.has_context = true;
-		report.context.return_code = err;
+		report.has_result = true;
+		report.result.return_code = err;
 		k_sem_give(&{{ zephlet_name }}_sem);
 		return report;
 	}
 
 	if (k_sem_take(&{{ zephlet_name }}_report_sem, timeout) != 0) {
-		report.has_context = true;
-		report.context.invoke_tag = {{ invoke_tag }};
-		report.context.correlation_id = cid;
-		report.context.return_code = -ETIMEDOUT;
+		report.has_result = true;
+		report.result.invoke_tag = {{ invoke_tag }};
+		report.result.correlation_id = cid;
+		report.result.return_code = -ETIMEDOUT;
 	} else {
 		report = {{ zephlet_name }}_sync_report;
 	}
@@ -223,35 +248,36 @@ struct {{ pb_prefix }}_report {{ zephlet_name }}_{{ method.name }}(enum {{ pb_pr
 	struct {{ pb_prefix }}_report report = {0};
 
 	if (k_sem_take(&{{ zephlet_name }}_sem, timeout) != 0) {
-		report.has_context = true;
-		report.context.return_code = -EBUSY;
+		report.has_result = true;
+		report.result.return_code = -EBUSY;
 		return report;
 	}
 
 	uint32_t cid = {{ zephlet_name }}_next_correlation_id();
 	{{ zephlet_name }}_expected_cid = cid;
+	{{ zephlet_name }}_deadline = sys_timepoint_calc(timeout);
 	k_sem_reset(&{{ zephlet_name }}_report_sem);
 
 	struct {{ pb_prefix }}_invoke ivk = {
 		.which_{{ invoke_oneof_name }} = {{ invoke_tag }},
 		.{{ method.name }} = {{ method.input_type|proto_type_to_snake }},
-		.has_context = true,
-		.context = { .correlation_id = cid }
+		.has_result = true,
+		.result = { .correlation_id = cid }
 	};
 
 	int err = zbus_chan_pub(&chan_{{ zephlet_name }}_invoke, &ivk, timeout);
 	if (err != 0) {
-		report.has_context = true;
-		report.context.return_code = err;
+		report.has_result = true;
+		report.result.return_code = err;
 		k_sem_give(&{{ zephlet_name }}_sem);
 		return report;
 	}
 
 	if (k_sem_take(&{{ zephlet_name }}_report_sem, timeout) != 0) {
-		report.has_context = true;
-		report.context.invoke_tag = {{ invoke_tag }};
-		report.context.correlation_id = cid;
-		report.context.return_code = -ETIMEDOUT;
+		report.has_result = true;
+		report.result.invoke_tag = {{ invoke_tag }};
+		report.result.correlation_id = cid;
+		report.result.return_code = -ETIMEDOUT;
 	} else {
 		report = {{ zephlet_name }}_sync_report;
 	}
@@ -267,35 +293,36 @@ struct {{ pb_prefix }}_report {{ zephlet_name }}_{{ method.name }}(const struct 
 	struct {{ pb_prefix }}_report report = {0};
 
 	if (k_sem_take(&{{ zephlet_name }}_sem, timeout) != 0) {
-		report.has_context = true;
-		report.context.return_code = -EBUSY;
+		report.has_result = true;
+		report.result.return_code = -EBUSY;
 		return report;
 	}
 
 	uint32_t cid = {{ zephlet_name }}_next_correlation_id();
 	{{ zephlet_name }}_expected_cid = cid;
+	{{ zephlet_name }}_deadline = sys_timepoint_calc(timeout);
 	k_sem_reset(&{{ zephlet_name }}_report_sem);
 
 	struct {{ pb_prefix }}_invoke ivk = {
 		.which_{{ invoke_oneof_name }} = {{ invoke_tag }},
 		.{{ method.name }} = *{{ method.input_type|proto_type_to_snake }},
-		.has_context = true,
-		.context = { .correlation_id = cid }
+		.has_result = true,
+		.result = { .correlation_id = cid }
 	};
 
 	int err = zbus_chan_pub(&chan_{{ zephlet_name }}_invoke, &ivk, timeout);
 	if (err != 0) {
-		report.has_context = true;
-		report.context.return_code = err;
+		report.has_result = true;
+		report.result.return_code = err;
 		k_sem_give(&{{ zephlet_name }}_sem);
 		return report;
 	}
 
 	if (k_sem_take(&{{ zephlet_name }}_report_sem, timeout) != 0) {
-		report.has_context = true;
-		report.context.invoke_tag = {{ invoke_tag }};
-		report.context.correlation_id = cid;
-		report.context.return_code = -ETIMEDOUT;
+		report.has_result = true;
+		report.result.invoke_tag = {{ invoke_tag }};
+		report.result.correlation_id = cid;
+		report.result.return_code = -ETIMEDOUT;
 	} else {
 		report = {{ zephlet_name }}_sync_report;
 	}

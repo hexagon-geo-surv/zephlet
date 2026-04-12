@@ -1,76 +1,20 @@
 /* GENERATED FILE - DO NOT EDIT */
-/* Report helpers for {{ zephlet_name }} implementation */
+/* Async report helpers for {{ zephlet_name }} implementation */
 
 #include "{{ zephlet_name }}_interface.h"
 
 {%- for field in report_fields %}
-{%- if field.is_empty %}
+{%- if not field.is_empty and field.message_type != 'ZephletStatus' and field.message_type != 'MsgZephletStatus' and field.message_type != 'Config' %}
 
-static inline int {{ zephlet_name }}_report_{{ field.name }}(const struct zephlet_context *context, k_timeout_t timeout)
-{
-	struct {{ pb_prefix }}_report rpt = {
-		.which_{{ report_oneof_name }} = {{ pb_prefix_upper }}_REPORT_{{ field.name|upper }}_TAG
-	};
-	if (context && context->correlation_id != 0) {
-		rpt.has_context = true;
-		rpt.context = *context;
-	}
-	return zbus_chan_pub(&chan_{{ zephlet_name }}_report, &rpt, timeout);
-}
-{%- else %}
-{%- if field.message_type == 'ZephletStatus' or field.message_type == 'MsgZephletStatus' %}
-
-static inline int {{ zephlet_name }}_report_{{ field.name }}(const struct zephlet_context *context, const struct zephlet_status *status, k_timeout_t timeout)
-{
-	struct {{ pb_prefix }}_report rpt = {
-		.which_{{ report_oneof_name }} = {{ pb_prefix_upper }}_REPORT_{{ field.name|upper }}_TAG,
-		.status = *status
-	};
-	if (context && context->correlation_id != 0) {
-		rpt.has_context = true;
-		rpt.context = *context;
-	}
-	return zbus_chan_pub(&chan_{{ zephlet_name }}_report, &rpt, timeout);
-}
-{%- elif field.message_type == 'Config' %}
-
-static inline int {{ zephlet_name }}_report_{{ field.name }}(const struct zephlet_context *context, const struct {{ pb_prefix }}_config *config, k_timeout_t timeout)
-{
-	struct {{ pb_prefix }}_report rpt = {
-		.which_{{ report_oneof_name }} = {{ pb_prefix_upper }}_REPORT_{{ field.name|upper }}_TAG,
-		.config = *config
-	};
-	if (context && context->correlation_id != 0) {
-		rpt.has_context = true;
-		rpt.context = *context;
-	}
-	return zbus_chan_pub(&chan_{{ zephlet_name }}_report, &rpt, timeout);
-}
-{%- else %}
-
-static inline int {{ zephlet_name }}_report_{{ field.name }}(const struct zephlet_context *context, const struct {{ pb_prefix }}_{{ field.message_type|camel_to_snake }} *{{ field.name }}, k_timeout_t timeout)
-{
-	struct {{ pb_prefix }}_report rpt = {
-		.which_{{ report_oneof_name }} = {{ pb_prefix_upper }}_REPORT_{{ field.name|upper }}_TAG,
-		.{{ field.name }} = *{{ field.name }}
-	};
-	if (context && context->correlation_id != 0) {
-		rpt.has_context = true;
-		rpt.context = *context;
-	}
-	return zbus_chan_pub(&chan_{{ zephlet_name }}_report, &rpt, timeout);
-}
-
-/* Async variant for events (no correlation to invoke) */
+/* Async variant for {{ field.name }} (no correlation to invoke) */
 static inline int {{ zephlet_name }}_report_{{ field.name }}_async(const struct {{ pb_prefix }}_{{ field.message_type|camel_to_snake }} *{{ field.name }}, k_timeout_t timeout)
 {
 	struct {{ pb_prefix }}_report rpt = {
 		.which_{{ report_oneof_name }} = {{ pb_prefix_upper }}_REPORT_{{ field.name|upper }}_TAG,
 		.{{ field.name }} = *{{ field.name }}
-		/* has_context = false (default) */
+		/* has_result = false (default) */
 	};
 	return zbus_chan_pub(&chan_{{ zephlet_name }}_report, &rpt, timeout);
 }
-{%- endif %}
 {%- endif %}
 {%- endfor %}

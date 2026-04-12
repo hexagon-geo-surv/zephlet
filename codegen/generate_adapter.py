@@ -53,7 +53,7 @@ def _find_zephlet_msg(messages):
         ):
             return message
     # New pattern: message with Invoke + Report sub-messages
-    skip_names = {'_', 'Empty', 'ZephletStatus', 'ZephletContext'}
+    skip_names = {'_', 'Empty', 'ZephletStatus', 'ZephletResult'}
     for message in messages:
         if message.name in skip_names:
             continue

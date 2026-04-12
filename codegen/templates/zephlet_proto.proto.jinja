@@ -36,7 +36,7 @@ message {{ msg_name }} {
 {%- endfor %}
 
   message Invoke {
-    optional ZephletContext context = 999; /* For correlation tracking */
+    optional ZephletResult result = 999; /* For correlation tracking */
     oneof {{ invoke_oneof_name }} {
 {%- for field in invoke_fields %}
       {{ field.type }} {{ field.name }} = {{ field.number }};
@@ -45,7 +45,7 @@ message {{ msg_name }} {
   }
 
   message Report {
-    optional ZephletContext context = 999; /* Present only for invoke responses */
+    optional ZephletResult result = 999; /* Present only for invoke responses */
     oneof {{ report_oneof_name }} {
 {%- for field in report_fields %}
       {{ field.type }} {{ field.name }} = {{ field.number }};

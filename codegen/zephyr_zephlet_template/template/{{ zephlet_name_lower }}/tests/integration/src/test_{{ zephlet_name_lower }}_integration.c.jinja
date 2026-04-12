@@ -10,8 +10,8 @@
 /* Counter for callbacks */
 static int report_count = 0;
 static struct {{ zephlet_name_lower }}_report last_report;
-static struct zephlet_context last_context;
-static bool last_has_context;
+static struct zephlet_result last_result;
+static bool last_has_result;
 
 K_SEM_DEFINE(report_sem, 0, 10);
 
@@ -22,9 +22,9 @@ static void {{ zephlet_name_lower }}_report_listener(const struct zbus_channel *
 
 	if (chan == &chan_zlet_{{ zephlet_name_lower }}_report) {
 		memcpy(&last_report, msg, sizeof(last_report));
-		last_has_context = msg->has_context;
-		if (msg->has_context) {
-			last_context = msg->context;
+		last_has_result = msg->has_result;
+		if (msg->has_result) {
+			last_result = msg->result;
 		}
 		report_count++;
 		k_sem_give(&report_sem);
@@ -45,8 +45,8 @@ static void reset(void *fixture)
 
 	report_count = 0;
 	memset(&last_report, 0, sizeof(last_report));
-	memset(&last_context, 0, sizeof(last_context));
-	last_has_context = false;
+	memset(&last_result, 0, sizeof(last_result));
+	last_has_result = false;
 	k_sem_reset(&report_sem);
 }
 
@@ -64,9 +64,9 @@ ZTEST({{ zephlet_name_lower }}_integration, test_start)
 		      "Expected status report");
 	zassert_true(last_report.status.is_running, "{{ zephlet_name_lower }} should be running");
 	zassert_equal(report_count, 1, "Expected 1 report");
-	zassert_true(last_has_context, "Should have context");
-	zassert_equal(last_context.correlation_id, 123, "Correlation ID mismatch");
-	zassert_equal(last_context.return_code, 0, "Expected success");
+	zassert_true(last_has_result, "Should have context");
+	zassert_equal(last_result.correlation_id, 123, "Correlation ID mismatch");
+	zassert_equal(last_result.return_code, 0, "Expected success");
 }
 
 /* Test 2: Stop stops zephlet */
@@ -82,9 +82,9 @@ ZTEST({{ zephlet_name_lower }}_integration, test_stop)
 	zassert_equal(last_report.which_{{ zephlet_name_lower }}_report_tag, {{ zephlet_name_upper }}_REPORT_STATUS_TAG,
 		      "Expected status report");
 	zassert_false(last_report.status.is_running, "{{ zephlet_name_lower }} should be stopped");
-	zassert_true(last_has_context, "Should have context");
-	zassert_equal(last_context.correlation_id, 301, "Correlation ID mismatch");
-	zassert_equal(last_context.return_code, 0, "Expected success");
+	zassert_true(last_has_result, "Should have context");
+	zassert_equal(last_result.correlation_id, 301, "Correlation ID mismatch");
+	zassert_equal(last_result.return_code, 0, "Expected success");
 }
 
 /* Test 3: Get status returns current state */
@@ -103,9 +103,9 @@ ZTEST({{ zephlet_name_lower }}_integration, test_get_status)
 	zassert_equal(last_report.which_{{ zephlet_name_lower }}_report_tag, {{ zephlet_name_upper }}_REPORT_STATUS_TAG,
 		      "Expected status report");
 	zassert_true(last_report.status.is_running, "Should be running");
-	zassert_true(last_has_context, "Should have context");
-	zassert_equal(last_context.correlation_id, 302, "Correlation ID mismatch");
-	zassert_equal(last_context.return_code, 0, "Expected success");
+	zassert_true(last_has_result, "Should have context");
+	zassert_equal(last_result.correlation_id, 302, "Correlation ID mismatch");
+	zassert_equal(last_result.return_code, 0, "Expected success");
 }
 
 /** Test 4: Config set publishes config */
@@ -158,9 +158,9 @@ ZTEST({{ zephlet_name_lower }}_integration, test_lifecycle_cycle)
 	zlet_{{ zephlet_name_lower }}_start(303, K_MSEC(100));
 	zassert_ok(k_sem_take(&report_sem, K_SECONDS(1)), "No start status");
 	zassert_true(last_report.status.is_running, "Should be running");
-	zassert_true(last_has_context, "Should have context");
-	zassert_equal(last_context.correlation_id, 303, "Correlation ID mismatch");
-	zassert_equal(last_context.return_code, 0, "Expected success");
+	zassert_true(last_has_result, "Should have context");
+	zassert_equal(last_result.correlation_id, 303, "Correlation ID mismatch");
+	zassert_equal(last_result.return_code, 0, "Expected success");
 
 	/* Stop */
 	zlet_{{ zephlet_name_lower }}_stop(0, K_MSEC(100));
@@ -171,9 +171,9 @@ ZTEST({{ zephlet_name_lower }}_integration, test_lifecycle_cycle)
 	zlet_{{ zephlet_name_lower }}_start(304, K_MSEC(100));
 	zassert_ok(k_sem_take(&report_sem, K_SECONDS(1)), "No restart status");
 	zassert_true(last_report.status.is_running, "Should be running again");
-	zassert_true(last_has_context, "Should have context");
-	zassert_equal(last_context.correlation_id, 304, "Correlation ID mismatch");
-	zassert_equal(last_context.return_code, 0, "Expected success");
+	zassert_true(last_has_result, "Should have context");
+	zassert_equal(last_result.correlation_id, 304, "Correlation ID mismatch");
+	zassert_equal(last_result.return_code, 0, "Expected success");
 }
 
 /** Test 7: Custom RPC tests */
