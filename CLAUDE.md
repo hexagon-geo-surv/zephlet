@@ -1,178 +1,103 @@
 # Zephlet Infrastructure v0.2.1
 
-## Commands
+Ports+Adapters on Zephyr/zbus. Zephlets=domain logic (no direct deps), adapters=bridge zephlet reports→invokes, main=lifecycle.
 
-**West Extensions** (primary, works from any directory):
-- `west zephlet new [-n NAME] [-d DESC] [-a AUTHOR]` - Create zephlet (interactive if no args)
-- `west zephlet new-adapter` - Create adapter (always interactive)
-- `west zephlet gen ZEPHLET` - Regenerate interface files (needs `build/modules/<zephlet>_zephlet`)
+## Commands (west)
 
-**Configuration:**
-- `west config zephlet.zephlets-dir <path>` - Custom zephlets location (default: `<project>/src/zephlets/`)
-- `west config zephlet.adapters-dir <path>` - Custom adapters location (default: `<project>/src/adapters/`)
+- `west zephlet new [-n -d -a]` — interactive w/o args
+- `west zephlet new-adapter` — always interactive
+- `west zephlet gen ZEPHLET` — regen interfaces (needs `build/modules/<z>_zephlet`)
+- `west config zephlet.{zephlets-dir,adapters-dir} <path>` — default `<project>/src/{zephlets,adapters}/`, falls back to root dirs
+- impl: `west/zephlet_commands.py` via `west-commands.yml`. Deps checked: copier, proto-schema-parser, jinja2. Workspace paths auto-resolved from manifest.
 
-**Fallback:** If `src/` subdirectories don't exist, uses root-level directories for backwards compatibility.
+## Channels
 
-**Implementation:** `west/zephlet_commands.py` (registered via `west-commands.yml`)
-**Benefits:** Ecosystem integration, auto path detection, dependency validation, works from any dir, structured output with next steps
-**Dependencies:** Checks for copier, proto-schema-parser, jinja2 before execution
-**Path detection:** Auto-resolves workspace paths from manifest location (`_get_workspace_paths()`)
-**Error handling:** Validates zephlet existence, build dirs, provides actionable error messages
+Per zephlet: `chan_<z>_invoke` (cmds), `chan_<z>_report` (status/events). Zephlets listen sync/async, publish to report.
 
-## Architecture
+## Zephlet files
 
-**Ports & Adapters** on Zephyr RTOS via **zbus**.
+- **VCS:** `zlet_<n>.proto`, `zlet_<n>.c` (after bootstrap), CMakeLists.txt, Kconfig, module.yml
+- **Generated:** `zlet_<n>_interface.{h,c}` (data/api/dispatcher/channels/blocking-impls/`<z>_set_implementation`), `zlet_<n>.h` (async report helpers), `.pb.{h,c}`
+- **Bootstrap:** CMake auto-gens `.c` via `--impl-only` if missing; then hand-edit only.
+- `_interface.h` exports: `<z>_data` (state+spinlock), `<z>_context` (self+response+timeout), `<z>_api` (int (*fn)(<z>_context*)), blocking call decls.
+- `.c`: init_fn sets is_ready, api impls return int + fill `ctx->response`, K_SPINLOCK. Ends `ZEPHLET_DEFINE(<z>, init_fn, &api, &data)`. Interface publishes. Use `<z>_report_*_async()` only for events/timers.
+- Shared: `struct zephlet` + `ZEPHLET_DEFINE()` + `ZEPHLET_CALL_OK()` via `STRUCT_SECTION_ITERABLE`.
 
-**Components:**
+## Blocking API (gRPC-style)
 
-1. Zephlets: Domain logic, no direct dependencies
-2. Adapters: Compose zephlets via channel bridging
-3. Main: Lifecycle orchestration
+All unary RPCs blocking. `<report> <z>_<cmd>([params], k_timeout_t)` returns by value. `ZEPHLET_CALL_OK(r)` = `r.has_result && r.result.return_code==0`. Errors: -ETIMEDOUT/-EBUSY/-EALREADY or app errno in `return_code`. `result.invoke_tag` = which RPC.
 
-**Two-Channel Pattern** per zephlet:
+Async events (impl-side): `int <z>_report_*_async([data], k_timeout_t)` — has_result=false.
 
-- `chan_<zephlet>_invoke`: Receives commands (START/STOP/CONFIG/etc)
-- `chan_<zephlet>_report`: Publishes status/events
-  Zephlets listen (sync/async), publish to report channel.
+Advanced listener pattern: `ZEPHLET_OBSERVE_REPORT` + `wait_report` still available.
 
-### Zephlet Structure
+## Adapters
 
-**Source (VCS):** zlet_<name>.proto, zlet_<name>.c (only this after bootstrap), CMakeLists.txt, Kconfig, module.yml
-**Generated (build):** zlet_<name>_interface.h (data/API/inline funcs), zlet_<name>_interface.c (channels/dispatcher/registration), zlet_<name>.h (report helpers), zlet_<name>.pb.h/.pb.c (nanopb)
-**Bootstrap:** CMake auto-generates .c once via `--impl-only` if missing. After initial creation, only manually edit .c.
+Listen zephlet report → invoke another zephlet. Zero direct coupling. `ZBUS_ASYNC_LISTENER_DEFINE` + `ZBUS_CHAN_ADD_OBS(prio=3)`. Kconfig toggleable.
+`base_adapter.c`: `LOG_MODULE_REGISTER(adapter, CONFIG_ADAPTERS_LOG_LEVEL)`. Others: `LOG_MODULE_DECLARE(...)`.
+Includes: interface headers only (no .pb.h). Order: interface, blank, zephyr, blank.
 
-**\_interface.h:** `<zephlet>_data` (state+spinlock), `<zephlet>_context` (self+response), `<zephlet>_api` (func ptrs returning int, take `<zephlet>_context *ctx`), blocking call declarations
-**\_interface.c:** Dispatcher (switch/case oneof tags, common result injection + publish after switch), blocking call implementations (semaphore-serialized, auto-correlated), `<zephlet>_set_implementation()`
-**.c:** Init func (sets is_ready), API impls return int, fill `ctx->response`, K_SPINLOCK updates, ends with `ZEPHLET_DEFINE(<zephlet>, init_fn, &api, &data)`. Interface handles publishing. Use `report_*_async()` for async events only.
-**Shared:** `struct zephlet` + `ZEPHLET_DEFINE()` + `ZEPHLET_CALL_OK()` → `STRUCT_SECTION_ITERABLE` discovery
+## Protobuf (nanopb)
 
-**Blocking API (gRPC-style):** All unary RPCs are blocking. `struct <report> <zephlet>_<cmd>([params...], k_timeout_t)`. Returns report by value. Use `ZEPHLET_CALL_OK(report)` to check success. On error: `report.result.return_code` has -ETIMEDOUT, -EBUSY, -EALREADY, etc. `report.result.invoke_tag` identifies which RPC produced the response.
-**Async helpers (impl-side):** `int <zephlet>_report_*_async([data...], k_timeout_t)` for events/timers (has_result=false).
-**Advanced:** `ZEPHLET_OBSERVE_REPORT` + `wait_report` still available for listener patterns.
+`MsgZlet<Z> { Config, Events, Invoke{oneof}, Report{oneof} }`. Import `zephlet.proto` for Empty/ZephletStatus. Options: `anonymous_oneof=true`, `long_names=false` (→ `MSG_TICK_INVOKE` not `MSG_ZLET_TICK_MSG_ZLET_TICK_INVOKE`). Query RPCs (get_status/get_config) return reports. Proto collected via `PROTO_FILES_LIST`→`zephyr_nanopb_sources()`. Don't edit generated.
 
-### Adapters
+**Lifecycle reserved:** Invoke 1-6 = start, stop, get_status, config, get_config, get_events. Report 1-3 = status, config, events. Custom: Invoke 7+, Report 4+. `validate_field_numbers()` enforces at build time (duplicates+standard-name-at-reserved fatal; gaps warn).
 
-Listen to zephlet report → invoke another zephlet. No direct coupling.
-Uses `ZBUS_ASYNC_LISTENER_DEFINE()` + `ZBUS_CHAN_ADD_OBS(priority=3)`. Kconfig toggleable.
-**base_adapter.c:** Registers shared logging module `LOG_MODULE_REGISTER(adapter, CONFIG_ADAPTERS_LOG_LEVEL)`. All adapters use `LOG_MODULE_DECLARE(adapter, CONFIG_ADAPTERS_LOG_LEVEL)`.
-**Include pattern:** Interface headers only (no .pb.h). Standardized: interface includes, blank line, zephyr includes, blank line.
+**Result:** `ZephletResult {correlation_id, return_code, invoke_tag}` at `optional result = 999` in Invoke/Report. Blocking calls auto-fill correlation_id + invoke_tag. `return_code` = POSIX errno (0=ok). `has_result` separates responses from async events.
 
-### Protobuf (nanopb)
+**Status:** `MsgZephletStatus {is_running, is_ready}`. is_ready set once by init (SYS_INIT); is_running toggled by start/stop.
 
-`MsgZlet<Zephlet> { Config{}, Events{}, Invoke{oneof}, Report{oneof} }`. Invoke: start/stop/get_status/config/get_config+custom. Report: status/config+events. Import "zephlet.proto" for Empty/MsgZephletStatus. Use `option (nanopb_fileopt).anonymous_oneof = true` and `option (nanopb_fileopt).long_names = false` (shorter C symbols, e.g. `MSG_TICK_INVOKE` instead of `MSG_ZLET_TICK_MSG_ZLET_TICK_INVOKE`). Query: get_status/get_config → reports. PROTO_FILES_LIST → nanopb. RPC return types strictly validated against Invoke/Report fields.
+**Generated C types:** `struct msg_<z>_{invoke|report|config}`, tags `MSG_<Z>_INVOKE_<CMD>_TAG`, oneof selector `which_<name>`.
 
-**Lifecycle Pattern:** Standard fields explicitly listed in all zephlet protos. Reserved numbers: Invoke 1-6 (start, stop, get_status, config, get_config, get_events), Report 1-3 (status, config, events). Custom commands/reports start at 7+/4+. Comments mark custom field ranges.
+## Build system
 
-**Field validation:** `validate_field_numbers()` enforces reserved ranges at build time. Checks duplicates, standard names at reserved numbers (fails build), warns on gaps (non-fatal). Actionable error messages guide fixes.
+- `zephyr_zephlet_define(<name> [INCLUDE_DIRS ...] [SRCS ...])` — single-line `CMakeLists.txt` per zephlet. Wraps `CONFIG_ZEPHLET_<N>` guard. Does proto gen + codegen + interface lib + zephyr lib.
+- `zephyr_zephlet_generate(<proto>)` — generates interfaces, bootstraps `.c` via `--impl-only` if missing.
+- `shared_zephlet` exposes `${CMAKE_BINARY_DIR}/zephlets` globally for .pb.h. Each zephlet: `zephyr_include_directories(${CMAKE_CURRENT_BINARY_DIR})` after generate. Interface lib propagation via `zephyr_interface_library_named()`.
+- Proto collection: append to `PROTO_FILES_LIST` global, root→`zephyr_nanopb_sources()`.
+- Py deps: proto-schema-parser, jinja2.
 
-**Request-response result:** `ZephletResult {correlation_id, return_code, invoke_tag}` enables invoke-report correlation + error propagation. `optional ZephletResult result = 999` in Invoke/Report. Blocking calls auto-generate correlation_id and set invoke_tag. return_code follows POSIX errno (0=success, <0=error). `has_result` distinguishes responses from async events. `invoke_tag` identifies which RPC produced the response. `ZEPHLET_CALL_OK(report)` checks `has_result && return_code == 0`.
+## Workflows
 
-**Lifecycle state:** `MsgZephletStatus {is_running, is_ready}`. `is_ready` set by init (SYS_INIT), `is_running` controlled by start/stop. Init happens once, start/stop multiple times.
+**New zephlet:** `west zephlet new` → copier writes 5 files → edit `.proto` (Config/Events/RPCs) → `just b` (bootstraps `.c`) → fill TODOs → add to root `EXTRA_ZEPHYR_MODULES` → `CONFIG_ZEPHLET_<Z>=y` → rebuild.
 
-**nanopb types:** Use `struct msg_<zephlet>_{invoke|report|config}`. Naming: `MsgZephlet.Invoke` → `msg_zephlet_invoke`, tags (with `long_names = false`): `MSG_TICK_INVOKE_START_TAG`, oneof: `which_<oneof_name>`.
+**Modify:** edit `.proto` → auto-regen interfaces (never overwrites `.c`) → update `.c` → build.
 
-## Build System
+**New adapter:** `west zephlet new-adapter` → prompts origin/dest + report fields → fill TODOs → `CONFIG_<O>_TO_<D>_ADAPTER=y`. Auto-writes `.c` + Kconfig + CMakeLists entries. Origin Report parsed + Dest Invoke parsed (Invoke names → TODO hints).
 
-**CMake macro:** `zephyr_zephlet_define(<name> [INCLUDE_DIRS ...] [SRCS ...])` - defines complete zephlet (proto gen, codegen, interface lib, zephyr lib). Wraps `CONFIG_ZEPHLET_<NAME>` guard. Derives all names from `<name>`. Each zephlet CMakeLists.txt is a single line: `zephyr_zephlet_define(tick)`.
-**CMake function:** `zephyr_zephlet_generate(<proto_path>)` - auto-generates interface files, handles bootstrap with `--impl-only` flag.
-**Include strategy:** shared_zephlet exposes `${CMAKE_BINARY_DIR}/zephlets` globally (for .pb.h). Each zephlet exposes build dir for interface headers via `zephyr_include_directories("${CMAKE_CURRENT_BINARY_DIR}")` after `zephyr_zephlet_generate()`. Interface library pattern: `zephyr_interface_library_named()` for include propagation.
-**Proto collection:** Each zephlet appends to `PROTO_FILES_LIST` global property, root retrieves and passes to `zephyr_nanopb_sources()`.
-**Dependencies:** Requires proto-schema-parser, jinja2 Python packages.
-Copier template auto-includes pattern. Self-managed visibility, no manual root updates.
+## Kconfig
 
-## Creating Zephlets
-
-**Workflow:** `west zephlet new` → Copier creates .proto/.c/CMakeLists/Kconfig/module.yml → Edit .proto (Config/Events/RPCs) → `just b` once (bootstrap .c if needed) → Edit .c (TODOs) → Add to root CMakeLists EXTRA_ZEPHYR_MODULES → Enable CONFIG_<ZEPHLET>_ZEPHLET=y → rebuild
-
-**Non-interactive:** `west zephlet new -n NAME -d "Description" -a "Author"`
-**Interactive:** `west zephlet new` (prompts for all fields)
-
-**Build-time codegen:** .proto changes → auto-regen \_interface.h/\_interface.c/<zephlet>.h/.pb.h/.pb.c. Manual: `west zephlet gen <zephlet>` (requires `build/modules/<zephlet>_zephlet` exists first).
-**Bootstrap behavior:** First build auto-generates .c via `--impl-only` if missing. After that, only manually edit .c.
-
-**Files:** VCS: .proto, .c (after bootstrap), CMakeLists, Kconfig, module.yml. Build: \_interface.h, \_interface.c, <zephlet>.h, .pb.h, .pb.c
-
-## Creating Adapters
-
-**Workflow:**
-
-1. `west zephlet new-adapter` → prompts for origin/dest → select report fields
-2. Implement TODO comments in generated `<Origin>+<Dest>_zlet_adapter.c`
-3. Enable CONFIG_<ORIGIN>\_TO\_<DEST>\_ADAPTER=y
-
-Always interactive - prompts for origin zephlet selection, destination zephlet selection, and report fields to handle.
-
-Auto-generates: adapter.c (with interface includes only, no .pb.h), Kconfig entry, CMakeLists.txt entry. Parses protos for Report fields (origin) + Invoke fields (dest, adds API suggestions to TODOs). Duplicate detection, manual fallback on auto-update failure.
-
-## Configuration
-
-Via Kconfig in `prj.conf`:
-
-- `CONFIG_ZEPHLET_<ZEPHLET>=y` / `CONFIG_ZEPHLET_<ZEPHLET>_LOG_LEVEL_DBG=y`
-- `CONFIG_<ADAPTER>_ADAPTER=y`
+`CONFIG_ZEPHLET_<Z>=y`, `CONFIG_ZEPHLET_<Z>_LOG_LEVEL_DBG=y`, `CONFIG_<O>_TO_<D>_ADAPTER=y`.
 
 ## Naming
 
-| Element | Pattern | Example |
-|---------|---------|---------|
-| **Source files** | `zlet_<name>.{proto,c}` | zlet_tick.proto, zlet_tick.c |
-| **Generated files** | `zlet_<name>_interface.{h,c}`, `zlet_<name>.h` | zlet_tick_interface.h, zlet_tick.h |
-| **Adapter files** | `<Origin>+<Dest>_zlet_adapter.c` | Tick+Ui_zlet_adapter.c |
-| **Adapter function** | `<origin>_to_<dest>_adapter` | tick_to_ui_adapter |
-| **Channels** | `chan_<zephlet>_{invoke\|report}` | chan_tick_invoke |
-| **Listeners** | `lis_<zephlet>`, `lis_<origin>_to_<dest>_adapter` | lis_tick, lis_tick_to_ui_adapter |
-| **Messages** | `msg_<zephlet>_{invoke\|report\|config}` | msg_tick_invoke |
-| **Structs** | `<zephlet>_{data\|api}` | tick_data, tick_api |
-| **Functions** | `<zephlet>_<cmd>()` (inline), `static int <cmd>(zephlet*)` | tick_start(), static int start() |
-| **Config** | `CONFIG_ZEPHLET_<ZEPHLET>`, `CONFIG_<ORIGIN>_TO_<DEST>_ADAPTER` | CONFIG_ZEPHLET_TICK, CONFIG_TICK_TO_UI_ADAPTER |
+| Elem | Pattern |
+|---|---|
+| Source | `zlet_<n>.{proto,c}` |
+| Generated | `zlet_<n>_interface.{h,c}`, `zlet_<n>.h` |
+| Adapter file | `<Origin>+<Dest>_zlet_adapter.c` (CamelCase) |
+| Adapter fn | `<origin>_to_<dest>_adapter` |
+| Channels | `chan_<z>_{invoke,report}` |
+| Listeners | `lis_<z>`, `lis_<o>_to_<d>_adapter` |
+| Messages | `msg_<z>_{invoke,report,config}` |
+| Structs | `<z>_{data,api,context}` |
+| API fns | inline `<z>_<cmd>()`, impl `static int <cmd>(<z>_context*)` |
+| Config | `CONFIG_ZEPHLET_<Z>`, `CONFIG_<O>_TO_<D>_ADAPTER` |
 
-## Data Flow
+## Data flow
 
-Init: init_fn calls init() (sets is_ready) → register impl. Blocking call: `<zlet>_start(timeout)` → sem_take → auto correlation_id → pub invoke (with result+invoke_tag) → wait_report_sync (filters tag+invoke_tag+correlation_id) → sem_give → return report by value. Async events: timer → report_*_async() (no result) → observers see has_result=false. Error: -EBUSY (sem), -ETIMEDOUT (wait), or app error in return_code.
+Init: `init_fn` → `init()` (is_ready=1) → `set_implementation()`. Blocking: `<z>_start(t)` → sem_take → correlation_id → pub invoke (result+invoke_tag) → `wait_report_sync` (filters tag+invoke_tag+corr_id) → sem_give → return report. Async: timer → `report_*_async()` (no result) → observers see `has_result=false`. Errors: -EBUSY (sem), -ETIMEDOUT (wait), app errno in return_code.
 
 ## Principles
 
-Loose coupling (zbus only). Separation (.h/.c/\_impl.c). Single return (`ret`, `goto end`), expect for guards, you can have several. No direct deps (except inline API). Composition via adapters. Type safety (proto/structs). Thread safety (K_SPINLOCK). Pluggable (registration). Async (ZBUS_ASYNC_LISTENER). Lifecycle (START/STOP/get_status/get_config). Auto discovery (STRUCT_SECTION_ITERABLE).
+zbus-only coupling. Single return (`ret`+`goto end`; multiple allowed for guards). No direct deps (except inline API). K_SPINLOCK for state. Auto-discover via `STRUCT_SECTION_ITERABLE`.
 
-## Code Generation
+## Code generation
 
-### Protobuf (nanopb)
+Scripts: `codegen/generate_zephlet.py`, `codegen/generate_adapter.py`. Templates: `codegen/templates/` (6 jinja2: zephlet.h→_interface.h, zephlet.c→_interface.c, zephlet_priv.h→.h, zephlet_impl.c→.c, adapter.c, adapter_kconfig). Filters: `camel_to_snake`, `upper`, `lower`. Copier: `zephyr_zephlet_template/`.
 
-PROTO_FILES_LIST → zephyr_nanopb_sources() → .pb.h/.pb.c (build dir). Don't edit.
-
-### Zephlet Generator
-
-Script: `codegen/generate_zephlet.py`. Proto → \_interface.h/\_interface.c/<zephlet>.h/.c template. Never overwrites .c unless `--impl-only`.
-
-**Generated:** \_interface.h (data/API/inline funcs), \_interface.c (channels/dispatcher), <zephlet>.h (report helpers), .c template (bootstrap only)
-**Hand-written:** .proto, .c (business logic)
-
-**Flags:** `--generate-impl`, `--no-generate-impl`, `--impl-only` (bootstrap mode - generates only .c if missing)
-
-**Workflow:**
-
-- New: Write .proto → first build auto-bootstraps .c → complete .c TODOs → rebuild
-- Modify: Edit .proto → auto-regen interfaces (no .c overwrite) → update .c → build
-
-**Process:** proto-schema-parser extracts service/invoke/report/config → Jinja2 templates → files. Proto oneof → API func ptrs + inline funcs + dispatcher switch/case.
-
-**RPC validation:** Strict type checking - `returns MsgZephletStatus` → `report_status()`, `returns Config` → `report_config()`, `returns Events (stream)` → `report_events()`. Validates RPC return types match Invoke/Report fields.
-
-**Helper header:** `<zephlet>.h` with `<zephlet>_report_*_async()` helpers only (for async events). Interface layer handles all correlated report publishing.
-
-**Templates:** `codegen/templates/` - 6 Jinja2 templates (zephlet.h→_interface.h, zephlet.c→_interface.c, zephlet_priv.h→.h, zephlet_impl.c→.c, adapter.c, adapter_kconfig). Filters: `|camel_to_snake`, `|upper`, `|lower`. Copier template: `zephyr_zephlet_template/` (initial 5 files).
-
-### Adapter Generator
-
-Script: `codegen/generate_adapter.py`. Parses origin proto (Report fields) + dest proto (Invoke fields) → generates adapter.c + updates Kconfig/CMakeLists.txt.
-
-**Process:** Scans for protos → proto-schema-parser extracts Report/Invoke oneofs → Jinja2 templates (adapter.c.jinja, adapter_kconfig.jinja) → writes files. Duplicate detection, graceful degradation.
-
-**Interactive:** User selects report fields to handle. **Non-interactive:** All fields.
-**API suggestions:** Dest Invoke fields → TODO comments (`/** Available ui commands: start, stop */`)
-
-**Include pattern:** Interface headers only (standardized: interface includes, blank line, zephyr includes, blank line). No .pb.h includes.
-
-**Auto-updates:** Kconfig (before `module =` with proper blank line spacing), CMakeLists.txt (after last zephyr_library_sources). Manual fallback on failure.
-
-**Naming:** File=`<Origin>+<Dest>_zlet_adapter.c` (CamelCase), Config=`CONFIG_<ORIGIN>_TO_<DEST>_ADAPTER`, Listener=`lis_<origin>_to_<dest>_adapter`, Function=`<origin>_to_<dest>_adapter`
+**Flags:** `--generate-impl` / `--no-generate-impl` / `--impl-only` (bootstrap).
+**Parser:** proto-schema-parser extracts service/invoke/report/config oneofs → api func ptrs + dispatcher switch/case.
+**RPC validation:** return type must match Report oneof field (`MsgZephletStatus`→status, `Config`→config, `Events`→events).
+**Helper header `<z>.h`:** `report_*_async()` only. Interface layer owns correlated publishing.
+**Adapter gen:** scans protos, parses Report/Invoke oneofs, writes adapter.c+Kconfig (before `module =`)+CMakeLists (after last `zephyr_library_sources`), manual fallback. Interactive=selected report fields, non-interactive=all.
