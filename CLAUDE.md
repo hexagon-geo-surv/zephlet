@@ -61,7 +61,7 @@ Uses `ZBUS_ASYNC_LISTENER_DEFINE()` + `ZBUS_CHAN_ADD_OBS(priority=3)`. Kconfig t
 
 `MsgZlet<Zephlet> { Config{}, Events{}, Invoke{oneof}, Report{oneof} }`. Invoke: start/stop/get_status/config/get_config+custom. Report: status/config+events. Import "zephlet.proto" for Empty/MsgZephletStatus. Use `option (nanopb_fileopt).anonymous_oneof = true` and `option (nanopb_fileopt).long_names = false` (shorter C symbols, e.g. `MSG_TICK_INVOKE` instead of `MSG_ZLET_TICK_MSG_ZLET_TICK_INVOKE`). Query: get_status/get_config → reports. PROTO_FILES_LIST → nanopb. RPC return types strictly validated against Invoke/Report fields.
 
-**Lifecycle Pattern:** Standard fields explicitly listed in all zephlet protos. Reserved numbers: Invoke 1-6 (start, stop, get_status, config, get_config, get_last_event), Report 1-3 (status, config, events). Custom commands/reports start at 7+/4+. Comments mark custom field ranges.
+**Lifecycle Pattern:** Standard fields explicitly listed in all zephlet protos. Reserved numbers: Invoke 1-6 (start, stop, get_status, config, get_config, get_events), Report 1-3 (status, config, events). Custom commands/reports start at 7+/4+. Comments mark custom field ranges.
 
 **Field validation:** `validate_field_numbers()` enforces reserved ranges at build time. Checks duplicates, standard names at reserved numbers (fails build), warns on gaps (non-fatal). Actionable error messages guide fixes.
 

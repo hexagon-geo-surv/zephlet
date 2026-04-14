@@ -152,9 +152,9 @@ static int {{ method.name }}(struct {{ zephlet_name }}_context *ctx
 	return 0;
 }
 {%- endif %}
-{%- elif method.report_field_name == 'events' and method.name == 'get_last_event' %}
+{%- elif method.report_field_name == 'events' and method.name == 'get_events' %}
 
-static int get_last_event(struct {{ zephlet_name }}_context *ctx)
+static int get_events(struct {{ zephlet_name }}_context *ctx)
 {
 	struct {{ zephlet_name }}_data *data = ctx->zephlet->data;
 

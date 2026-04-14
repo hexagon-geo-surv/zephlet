@@ -30,7 +30,7 @@ message Invoke {
     Empty get_status = 3;
     Config config = 4;
     Empty get_config = 5;
-    Empty get_last_event = 6;
+    Empty get_events = 6;
   }
 }
 
@@ -58,5 +58,5 @@ service ZephletBase {
   rpc get_status(Empty) returns (ZephletStatus);
   rpc config(Config) returns (Config);
   rpc get_config(Empty) returns (Config);
-  rpc get_last_event(Empty) returns (Events);
+  rpc get_events(Empty) returns (Events);
 }
