@@ -548,6 +548,57 @@ def parse_zephlet_proto(proto_path: str, zephlet_name: str, module_dir: str, out
                     f"'{f['name'][4:]}'"
                 )
 
+    # Extract events fields.  The `timestamp` field (always field #1, non-
+    # optional) is always overwritten by events_update; every other field
+    # must be `optional` so the differential merge has has_<field> flags.
+    events_fields = []
+    if events_msg:
+        non_optional_non_ts = []
+        has_timestamp = False
+        for element in events_msg.elements:
+            if hasattr(element, 'name') and element.__class__.__name__ == 'Field':
+                card_raw = getattr(element, 'cardinality', None)
+                is_optional = card_raw is not None and 'optional' in str(card_raw).lower()
+                is_timestamp = (element.name == 'timestamp')
+                if is_timestamp:
+                    has_timestamp = True
+                    if is_optional:
+                        raise ValueError(
+                            f"{zephlet_name}: Events.timestamp must NOT be "
+                            f"declared `optional` — it is always auto-set "
+                            f"by events_update"
+                        )
+                elif not is_optional:
+                    non_optional_non_ts.append(element.name)
+                events_fields.append({
+                    'name': element.name,
+                    'type': map_proto_type_to_c(element.type),
+                    'proto_type': element.type,
+                    'is_optional': is_optional,
+                    'is_timestamp': is_timestamp,
+                })
+        if not has_timestamp:
+            raise ValueError(
+                f"{zephlet_name}: Events message must contain a "
+                f"non-optional `timestamp` field"
+            )
+        if non_optional_non_ts:
+            raise ValueError(
+                f"{zephlet_name}: Events fields (except timestamp) must be "
+                f"declared `optional` to support differential merge via "
+                f"events_update: {', '.join(non_optional_non_ts)}"
+            )
+
+        # Collision check: has_<x> vs optional field x.
+        names = {f['name'] for f in events_fields}
+        for f in events_fields:
+            if f['name'].startswith('has_') and f['name'][4:] in names:
+                raise ValueError(
+                    f"{zephlet_name}: Events field '{f['name']}' collides "
+                    f"with the nanopb presence flag for optional field "
+                    f"'{f['name'][4:]}'"
+                )
+
     # Extract RPC methods if zephlet definition exists
     rpc_methods = []
     if zephlet_def and hasattr(zephlet_def, 'elements'):
@@ -651,6 +702,8 @@ def parse_zephlet_proto(proto_path: str, zephlet_name: str, module_dir: str, out
         'settings_fields': settings_fields,
         'settings_type': f"{pb_prefix}_settings" if settings_msg else None,
         'has_settings': settings_msg is not None,
+        'events_fields': events_fields,
+        'events_type': f"{pb_prefix}_events" if events_msg else None,
         'has_events': events_msg is not None,
         'rpc_methods': rpc_methods
     }

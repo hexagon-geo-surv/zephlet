@@ -132,7 +132,7 @@ struct zephlet_status <pb>_status_clone(void);
 struct <pb>_settings  <pb>_settings_clone(void);
 struct <pb>_events    <pb>_events_clone(void);
 void                  <pb>_settings_init(const struct <pb>_settings *);  /* init_fn only */
-int                   <pb>_events_update(const struct <pb>_events *, k_timeout_t);
+int                   <pb>_events_update(struct <zlet>_context *ctx, const struct <pb>_events *delta);
 ```
 
 Notice the `<pb>_*` prefix (e.g. `tick_*`, `ui_*`) — distinct from the

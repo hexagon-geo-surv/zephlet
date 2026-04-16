@@ -57,26 +57,56 @@ static inline struct {{ pb_prefix }}_events {{ base_name }}_events_clone(void)
 }
 
 /* ------------------------------------------------------------------ */
-/* Events update — the single write path for events.                  */
-/*                                                                    */
-/* Commits the new value to storage under the spinlock (works from    */
-/* any context, including ISRs), then publishes an async report so    */
-/* observers see the transition. Callers in thread context can pass a */
-/* real timeout; ISR callers must pass K_NO_WAIT.                     */
+/* Events merge — applies the has_<field> flagged fields of src onto  */
+/* dst. The `timestamp` field is NOT merged here; it is always auto-  */
+/* set by events_update via k_uptime_get().                           */
 /* ------------------------------------------------------------------ */
 
-static inline int {{ base_name }}_events_update(const struct {{ pb_prefix }}_events *events,
-                                                 k_timeout_t timeout)
+static inline void {{ zephlet_name }}_merge_events(struct {{ events_type }} *dst,
+                                                    const struct {{ events_type }} *src)
 {
+{%- for field in events_fields %}
+{%- if not field.is_timestamp %}
+	if (src->has_{{ field.name }}) {
+		dst->{{ field.name }} = src->{{ field.name }};
+		dst->has_{{ field.name }} = true;
+	}
+{%- endif %}
+{%- endfor %}
+}
+
+/* ------------------------------------------------------------------ */
+/* Events update — differential write path for events.                */
+/*                                                                    */
+/* Merges the delta into stored events (only has_<field>-flagged      */
+/* fields are updated), auto-sets timestamp via k_uptime_get(), then  */
+/* publishes an async report.                                         */
+/*                                                                    */
+/* ctx may be NULL (ISR / fire-and-forget callers). When non-NULL,    */
+/* the timeout is derived from ctx->deadline; when NULL, K_NO_WAIT    */
+/* is used.                                                           */
+/* ------------------------------------------------------------------ */
+
+static inline int {{ base_name }}_events_update(struct {{ zephlet_name }}_context *ctx,
+                                                 const struct {{ events_type }} *delta)
+{
+	struct {{ events_type }} merged;
+
 	K_SPINLOCK(&{{ zephlet_name }}_lock) {
-		{{ zephlet_name }}_events_storage = *events;
+		merged = {{ zephlet_name }}_events_storage;
+		{{ zephlet_name }}_merge_events(&merged, delta);
+		merged.timestamp = (int32_t)k_uptime_get();
+		{{ zephlet_name }}_events_storage = merged;
 	}
 
 	struct {{ pb_prefix }}_report rpt = {
 		.which_{{ report_oneof_name }} = {{ pb_prefix_upper }}_REPORT_EVENTS_TAG,
-		.events = *events,
+		.events = merged,
 		/* has_result = false (default) */
 	};
+	k_timeout_t timeout = (ctx != NULL)
+		? sys_timepoint_timeout(ctx->deadline)
+		: K_NO_WAIT;
 	return zbus_chan_pub(&chan_{{ zephlet_name }}_report, &rpt, timeout);
 }
 {%- endif %}

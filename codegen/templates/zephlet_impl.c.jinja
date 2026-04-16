@@ -33,8 +33,12 @@ LOG_MODULE_DECLARE({{ zephlet_name }}, CONFIG_ZEPHLET_{{ base_name_upper }}_LOG_
  *   void {{ base_name }}_settings_init(const struct {{ settings_type }} *defaults);
 {%- endif %}
 {%- if has_events %}
- *   struct {{ pb_prefix }}_events {{ base_name }}_events_clone(void);
- *   int {{ base_name }}_events_update(const struct {{ pb_prefix }}_events *ev, k_timeout_t timeout);
+ *   struct {{ events_type }} {{ base_name }}_events_clone(void);
+ *   int {{ base_name }}_events_update(struct {{ zephlet_name }}_context *ctx,
+ *                                      const struct {{ events_type }} *delta);
+ *     ctx = NULL for ISR/fire-and-forget (K_NO_WAIT), non-NULL for
+ *     deadline-aware publish. Differential merge: only has_<field>-
+ *     flagged fields are updated. timestamp is auto-set.
 {%- endif %}
  */
 

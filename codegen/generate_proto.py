@@ -328,6 +328,57 @@ def main():
                     )
                     sys.exit(1)
 
+    # --- Validate Events message contract ---
+    # `timestamp` must exist and must NOT be optional (auto-set by
+    # events_update).  All other fields MUST be `optional` so the
+    # differential merge has has_<field> companions.
+    if has_events:
+        events_msg = next(
+            (n for n in nested_types if n['name'] == 'Events'), None)
+        if events_msg is not None:
+            ts_fields = [
+                f for f in events_msg['fields']
+                if f['name'] == 'timestamp'
+            ]
+            if not ts_fields:
+                print(
+                    f"Error: {msg_name}.Events must contain a "
+                    f"non-optional `timestamp` field"
+                )
+                sys.exit(1)
+            ts = ts_fields[0]
+            if 'optional' in (ts.get('cardinality') or ''):
+                print(
+                    f"Error: {msg_name}.Events.timestamp must NOT be "
+                    f"declared `optional` — it is auto-set by "
+                    f"events_update"
+                )
+                sys.exit(1)
+
+            non_optional = [
+                f['name'] for f in events_msg['fields']
+                if f['name'] != 'timestamp'
+                and 'optional' not in (f.get('cardinality') or '')
+            ]
+            if non_optional:
+                print(
+                    f"Error: {msg_name}.Events fields (except timestamp) "
+                    f"must be declared `optional` to support differential "
+                    f"merge via events_update: {', '.join(non_optional)}"
+                )
+                sys.exit(1)
+
+            field_names = {f['name'] for f in events_msg['fields']}
+            for field in events_msg['fields']:
+                name = field['name']
+                if name.startswith('has_') and name[4:] in field_names:
+                    print(
+                        f"Error: {msg_name}.Events field '{name}' collides "
+                        f"with the nanopb presence flag for optional field "
+                        f"'{name[4:]}'"
+                    )
+                    sys.exit(1)
+
     # --- Build Invoke fields ---
 
     invoke_fields = []

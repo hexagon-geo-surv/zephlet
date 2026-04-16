@@ -25,7 +25,7 @@ LOG_MODULE_DECLARE(zlet_{{ zephlet_name_lower }}, CONFIG_ZEPHLET_{{ zephlet_name
  * Access mutable state via {{ zephlet_name_lower }}_status_clone(),
  * {{ zephlet_name_lower }}_settings_clone(), {{ zephlet_name_lower }}_events_clone(),
  * {{ zephlet_name_lower }}_settings_init(&defaults),
- * {{ zephlet_name_lower }}_events_update(&ev, timeout).
+ * {{ zephlet_name_lower }}_events_update(ctx_or_NULL, &delta).
  */
 
 /* TODO: Add custom RPC method implementations and wire them into a
