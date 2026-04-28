@@ -89,7 +89,7 @@ Source `.proto` per zephlet:
 
 ```proto
 message Tick {
-  message Config { uint32 period_ms = 1; uint32 max_period_ms = 2; }
+  message Config { uint32 duration_ms = 1; uint32 period_ms = 2; }
   message Events { int32 timestamp = 1; }
 }
 
