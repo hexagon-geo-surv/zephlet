@@ -1,0 +1,7 @@
+tests:
+  zephlet.shared.coord:
+    tags: zephlet shared coord
+    harness: ztest
+    platform_allow:
+      - native_sim
+    timeout: 30
