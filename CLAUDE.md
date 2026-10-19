@@ -48,7 +48,7 @@ const struct zephlet *zephlet_get_by_name(const char *name);
 
 ## Per-zephlet files
 
-- **User-owned (source tree):** `<prefix>.proto`, optional `<prefix>.zephlet.options` (frontend opt-ins `coap`, `coap_discoverable`, `lua`, set here in nanopb `.options` syntax, e.g. `TickApi coap:true lua:true`, and/or in the proto as `option (zephlet.<key>) = true;` from `zephlet_options.proto`; proto overrides the file, as in nanopb), `<prefix>.h` (declares `struct <type>_data` + `int <type>_init_fn(const struct zephlet *)`), `<prefix>.c` (strong handler overrides), `CMakeLists.txt` (single `zephyr_zephlet_generate(TYPE ... PREFIX ... SOURCES ...)` call), `Kconfig`, `zephyr/module.yml`.
+- **User-owned (source tree):** `<prefix>.proto`, optional `<prefix>.zephlet.options` (frontend opt-ins `coap`, `coap_discoverable`, `lua`, set here in nanopb `.options` syntax, e.g. `TickApi coap:true lua:true`, and/or in the proto as `option (zephlet.<key>) = true;` from `zephlet_options.proto`; proto overrides the file, as in nanopb; per-rpc key `shell` (default true) set in the rpc body `{ option (zephlet.shell) = false; }` or as `TickApi.config shell:false` (rpc half fnmatch), hides that rpc from the shell tables only — method ids untouched, paste prefix skips hidden rpcs, all hidden → empty shell hook), `<prefix>.h` (declares `struct <type>_data` + `int <type>_init_fn(const struct zephlet *)`), `<prefix>.c` (strong handler overrides), `CMakeLists.txt` (single `zephyr_zephlet_generate(TYPE ... PREFIX ... SOURCES ...)` call), `Kconfig`, `zephyr/module.yml`.
 - **Generated (build dir):** `<prefix>_interface.{h,c}`, `<prefix>.pb.{h,c}`.
 - **Framework-standard fields** come first in `struct <type>_data`: `bool is_running, is_ready;` — custom fields follow, separated by a banner comment. The runtime config is `*z->config` (writable; user owns the per-instance struct).
 
@@ -164,7 +164,7 @@ Single script `codegen/generate_zephlet.py` parses the `.proto` service block, c
 - `CONFIG_ZEPHLET_MAX_INSTANCES=N` — bound for the SYS_INIT ordering buffer. Default 16.
 - `CONFIG_ZEPHLET_<TYPE>=y` — per-zephlet switch (selects `NANOPB`).
 - `CONFIG_ZEPHLETS_SHELL=y` — shell frontend. Registers every instance's
-  RPCs under one `zlet` root command, via the per-type
+  RPCs (minus `shell:false` ones) under one `zlet` root command, via the per-type
   `_ZLET_SHELL_HOOK_<type>` hook that `ZEPHLET_NEW` expands; no app code.
   **`select`s `NANOPB_TEXTFORMAT`, so the app's west manifest must carry
   [`zephyr-nanopb-textformat`](https://github.com/rodrigopex/zephyr-nanopb-textformat)**

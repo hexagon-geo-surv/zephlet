@@ -63,6 +63,9 @@ def camel_to_snake(name: str) -> str:
 # Keys of a zephlet's options file. Every one is a boolean, false unless set.
 ZEPHLET_OPTIONS = ("coap", "coap_discoverable", "lua")
 
+# Keys set on one rpc, `TickApi.config shell:false`, with their defaults.
+ZEPHLET_METHOD_OPTIONS = {"shell": True}
+
 
 def options_path_for(proto_path: str) -> str:
     """The zephlet options file read for @p proto_path: `<prefix>.zephlet.options`
@@ -75,24 +78,16 @@ def _options_error(path: str, lineno: int, msg: str) -> None:
     sys.exit(1)
 
 
-def read_zephlet_options(path: str, service_name: str) -> dict:
+def _read_options_file(path: str, service_name: str,
+                       method_names) -> tuple[dict, dict]:
     """
-    Read the options of the service @p service_name from @p path.
-
-    The syntax is that of nanopb's .options files: `#`, `//` and `/* */`
-    comments, and lines of `<pattern> option:value ...`, where the pattern is
-    an fnmatch() mask matched against the service name and a later line
-    overrides an earlier one:
-
-        TickApi coap:true lua:true
-
-    The options are the ZEPHLET_OPTIONS keys, each `true` or `false`. A line
-    whose pattern matches no service is an error, as is an unknown option. A
-    missing file sets nothing.
+    Read @p path into the service's options and, per rpc in @p method_names,
+    that rpc's options. See read_zephlet_options() for the syntax.
     """
     opts = dict.fromkeys(ZEPHLET_OPTIONS, False)
+    method_opts = {name: dict(ZEPHLET_METHOD_OPTIONS) for name in method_names}
     if not os.path.exists(path):
-        return opts
+        return opts, method_opts
 
     with open(path, "r") as f:
         data = f.read()
@@ -111,20 +106,85 @@ def read_zephlet_options(path: str, service_name: str) -> dict:
             _options_error(path, lineno, f"expected `<service> option:value ...`, "
                            f"got '{line}'")
         mask, rest = parts
-        if not fnmatch.fnmatchcase(service_name, mask):
-            _options_error(path, lineno, f"'{mask}' matches no service; this "
-                           f"file's service is {service_name}")
+        service_mask, dot, method_mask = mask.partition(".")
+        if not fnmatch.fnmatchcase(service_name, service_mask):
+            _options_error(path, lineno, f"'{service_mask}' matches no service; "
+                           f"this file's service is {service_name}")
+        if dot:
+            targets = [n for n in method_names
+                       if fnmatch.fnmatchcase(n, method_mask)]
+            if not targets:
+                _options_error(path, lineno, f"'{method_mask}' matches no rpc of "
+                               f"{service_name}")
+            known = tuple(ZEPHLET_METHOD_OPTIONS)
+        else:
+            known = ZEPHLET_OPTIONS
         for token in re.sub(r"\s*:\s*", ":", rest).split():
             key, sep, value = token.partition(":")
-            if not sep or key not in ZEPHLET_OPTIONS:
+            if not sep or key not in known:
+                other = ZEPHLET_OPTIONS if dot else tuple(ZEPHLET_METHOD_OPTIONS)
+                where = (f"set {key} on the service line `{service_mask} ...`"
+                         if dot else
+                         f"set {key} per rpc, `{service_mask}.<rpc> ...`")
+                hint = f"; {where}" if sep and key in other else ""
                 _options_error(path, lineno, f"unknown option '{token}'; known: "
-                               + ", ".join(ZEPHLET_OPTIONS))
+                               + ", ".join(known) + hint)
             if value not in ("true", "false"):
                 _options_error(path, lineno, f"{key}: expected true or false, "
                                f"got '{value}'")
-            opts[key] = value == "true"
+            if dot:
+                for name in targets:
+                    method_opts[name][key] = value == "true"
+            else:
+                opts[key] = value == "true"
 
-    return opts
+    return opts, method_opts
+
+
+def read_zephlet_options(path: str, service_name: str, method_names) -> dict:
+    """
+    Read the options of the service @p service_name from @p path.
+
+    The syntax is that of nanopb's .options files: `#`, `//` and `/* */`
+    comments, and lines of `<pattern> option:value ...`, where the pattern is
+    an fnmatch() mask matched against the service name and a later line
+    overrides an earlier one:
+
+        TickApi coap:true lua:true
+
+    The options are the ZEPHLET_OPTIONS keys, each `true` or `false`. A
+    pattern `<service>.<rpc>` instead sets the ZEPHLET_METHOD_OPTIONS keys of
+    every rpc in @p method_names its second half matches:
+
+        TickApi.config shell:false
+
+    A line whose pattern matches no service or no rpc is an error, as is an
+    unknown option. A missing file sets nothing.
+    """
+    return _read_options_file(path, service_name, method_names)[0]
+
+
+def _proto_option_key(proto_path: str, inner, known, other, where) -> str | None:
+    """The key of @p inner if it is an `option (zephlet.<key>)` among @p known,
+    else None for any other element; exit on an unknown key or a non-bool. A
+    key among @p other, the options of the other kind, is pointed @p where."""
+    name = getattr(inner, "name", "")
+    if inner.__class__.__name__ != "Option" or not name.startswith("(zephlet."):
+        return None
+    key = name[len("(zephlet."):-1]
+    if key not in known:
+        print(f"{proto_path}: unknown option `{name}` (the proto parser "
+              "gives no line numbers); known: "
+              + ", ".join(f"(zephlet.{k})" for k in known)
+              + (f"; set {name} {where}" if key in other else ""),
+              file=sys.stderr)
+        sys.exit(1)
+    if not isinstance(inner.value, bool):
+        print(f"{proto_path}: `option {name}` expects true or false (the "
+              "proto parser gives no line numbers).",
+              file=sys.stderr)
+        sys.exit(1)
+    return key
 
 
 def read_proto_zephlet_options(proto_path: str, service) -> dict:
@@ -135,34 +195,43 @@ def read_proto_zephlet_options(proto_path: str, service) -> dict:
     """
     opts = {}
     for inner in service.elements:
-        name = getattr(inner, "name", "")
-        if inner.__class__.__name__ != "Option" or not name.startswith("(zephlet."):
-            continue
-        key = name[len("(zephlet."):-1]
-        if key not in ZEPHLET_OPTIONS:
-            print(f"{proto_path}: unknown option `{name}` (the proto parser "
-                  "gives no line numbers); known: "
-                  + ", ".join(f"(zephlet.{k})" for k in ZEPHLET_OPTIONS),
-                  file=sys.stderr)
-            sys.exit(1)
-        if not isinstance(inner.value, bool):
-            print(f"{proto_path}: `option {name}` expects true or false (the "
-                  "proto parser gives no line numbers).",
-                  file=sys.stderr)
-            sys.exit(1)
-        opts[key] = inner.value
+        key = _proto_option_key(proto_path, inner, ZEPHLET_OPTIONS,
+                                tuple(ZEPHLET_METHOD_OPTIONS), "in an rpc body")
+        if key is not None:
+            opts[key] = inner.value
     return opts
 
 
-def zephlet_options(proto_path: str, service, options_path: str) -> dict:
+def read_proto_method_options(proto_path: str, method) -> dict:
     """
-    The options of @p service, from both places they can be set: the options
-    file @p options_path, then `option (zephlet.<key>)` in the proto. As in
+    Return the options that the rpc @p method sets in its body, e.g.
+    `rpc config (...) returns (...) { option (zephlet.shell) = false; }`, as a
+    dict holding only the keys it sets.
+    """
+    opts = {}
+    for inner in getattr(method, "elements", None) or ():
+        key = _proto_option_key(proto_path, inner, tuple(ZEPHLET_METHOD_OPTIONS),
+                                ZEPHLET_OPTIONS, "in the service body")
+        if key is not None:
+            opts[key] = inner.value
+    return opts
+
+
+def zephlet_options(proto_path: str, service, methods,
+                    options_path: str) -> tuple[dict, dict]:
+    """
+    The options of @p service, and per rpc the options of each of its
+    @p methods, from both places they can be set: the options file
+    @p options_path, then `option (zephlet.<key>)` in the proto. As in
     nanopb, an option set in the proto overrides the options file.
     """
-    opts = read_zephlet_options(options_path, service.name)
+    opts, method_opts = _read_options_file(options_path, service.name,
+                                           [m.name for m in methods])
     opts.update(read_proto_zephlet_options(proto_path, service))
-    return opts
+    for method in methods:
+        method_opts[method.name].update(
+            read_proto_method_options(proto_path, method))
+    return opts, method_opts
 
 
 _BASE_METHODS_CACHE: list[str] | None = None
@@ -640,7 +709,9 @@ def parse_proto(proto_path: str, options_path: str | None = None) -> dict:
 
     if options_path is None:
         options_path = options_path_for(proto_path)
-    options = zephlet_options(proto_path, service, options_path)
+    methods = [m for m in service.elements if m.__class__.__name__ == "Method"]
+    options, method_options = zephlet_options(proto_path, service, methods,
+                                              options_path)
     coap_opt_in = options["coap"]
     coap_discoverable = options["coap_discoverable"]
     lua_opt_in = options["lua"]
@@ -654,10 +725,7 @@ def parse_proto(proto_path: str, options_path: str | None = None) -> dict:
     # Walk service methods, allocate method_id in declaration order starting at 1.
     commands = []
     next_id = 1
-    for method in service.elements:
-        if method.__class__.__name__ != "Method":
-            continue
-
+    for method in methods:
         input_type = method.input_type
         output_type = method.output_type
         # proto-schema-parser exposes MessageType with a `.type` attr for the
@@ -698,6 +766,9 @@ def parse_proto(proto_path: str, options_path: str | None = None) -> dict:
             "req_shell_uc": req_shell_lc.upper(),
             "resp_shell_lc": resp_shell_lc,
             "resp_shell_uc": resp_shell_lc.upper(),
+            # False hides this RPC from the shell frontend only: it keeps its
+            # method_id and its slot in every other table.
+            "shell": method_options[method.name]["shell"],
             # Which of the 4 wrapper call shapes this RPC needs — decided
             # here (codegen already knows req/resp_is_empty) so the shell
             # macro framework never has to infer it from a name match.
@@ -729,10 +800,12 @@ def parse_proto(proto_path: str, options_path: str | None = None) -> dict:
     # one list. First match in declaration order wins, which makes an RPC that
     # both takes and returns a type (config) resolve to itself -- the correct
     # answer, since `zlet <inst> config <msg>` is exactly what you paste back.
-    for cmd in commands:
+    # Only an RPC the shell exposes prints a response or can be pasted back.
+    commands_shell = [c for c in commands if c["shell"]]
+    for cmd in commands_shell:
         paste_rpc = None
         if cmd["resp_c_name"]:
-            for other in commands:
+            for other in commands_shell:
                 if other["req_c_name"] == cmd["resp_c_name"]:
                     paste_rpc = other["name"]
                     break
@@ -768,8 +841,7 @@ def parse_proto(proto_path: str, options_path: str | None = None) -> dict:
     shared_elements = load_shared_elements()
     qualified_names = collect_qualified_names(tree.file_elements, shared_elements)
 
-    for cmd, method in zip(commands, (m for m in service.elements
-                                      if m.__class__.__name__ == "Method")):
+    for cmd, method in zip(commands, methods):
         def lua_class(type_ref):
             if type_ref == "Empty":
                 return "pb.Empty"
@@ -835,6 +907,7 @@ def parse_proto(proto_path: str, options_path: str | None = None) -> dict:
         "commands": commands,
         "commands_base": commands_base,
         "commands_custom": commands_custom,
+        "commands_shell": commands_shell,
         "num_methods_including_reserved": commands[-1]["method_id"] + 1,
         "coap_opt_in": coap_opt_in,
         "coap_discoverable": coap_discoverable,

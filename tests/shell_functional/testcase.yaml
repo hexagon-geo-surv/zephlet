@@ -72,3 +72,11 @@ tests:
       pytest_dut_scope: module
       pytest_root:
         - "pytest/test_typelab_types.py"
+  zephlet.shell_functional.shell_option:
+    # The `shell` rpc option: ui_main hides one rpc from the proto and one
+    # from its options file, and quiet_main hides every rpc, so it has no
+    # `zlet` subcommand.
+    harness_config:
+      pytest_dut_scope: module
+      pytest_root:
+        - "pytest/test_shell_option.py"

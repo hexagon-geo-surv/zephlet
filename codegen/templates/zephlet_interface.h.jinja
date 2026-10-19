@@ -49,8 +49,11 @@ extern const struct zephlet_api {{ type_snake }}_api;
  * Always emitted — a compile-time table, never a function call, so it
  * costs nothing unless ZLET_SHELL_INSTANCE() is used. */
 #define {{ type_upper }}_SHELL_METHODS(X) \
-{% for cmd in commands %}
+{% for cmd in commands_shell %}
 	X({{ cmd.name }}, {{ cmd.req_shell_lc }}, {{ cmd.req_shell_uc }}, {{ cmd.resp_shell_lc }}, {{ cmd.resp_shell_uc }}, {{ cmd.shell_call_shape }}, {{ cmd.shell_paste_rpc }}, "{{ cmd.shell_help }}"){% if not loop.last %} \{% endif %}
+
+{% else %}
+	/* every rpc sets shell:false */
 
 {% endfor %}
 /* Same rows, with the zephlet type baked in literally as each row's
@@ -60,8 +63,11 @@ extern const struct zephlet_api {{ type_snake }}_api;
  * `_ZLET_COAP_HOOK_{{ type_snake }}` convention above. See
  * ZLET_SHELL_INSTANCE() in zephlet_shell_macros.h. */
 #define _ZLET_SHELL_METHODS_APPLY_{{ type_snake }}(_instance, X) \
-{% for cmd in commands %}
+{% for cmd in commands_shell %}
 	X({{ type_snake }}, _instance, {{ cmd.name }}, {{ cmd.req_shell_lc }}, {{ cmd.req_shell_uc }}, {{ cmd.resp_shell_lc }}, {{ cmd.resp_shell_uc }}, {{ cmd.shell_call_shape }}, {{ cmd.shell_paste_rpc }}, "{{ cmd.shell_help }}"){% if not loop.last %} \{% endif %}
+
+{% else %}
+	/* every rpc sets shell:false */
 
 {% endfor %}
 
@@ -96,7 +102,9 @@ extern const struct zephlet_api {{ type_snake }}_api;
 /* Shell has no per-service opt-in (see ADR-0001's addendum) — its
  * hook is gated purely by CONFIG_ZEPHLETS_SHELL, not by an included
  * override header, so a plain #if/#else suffices here (no #ifndef
- * fallback needed, unlike CoAP above). */
+ * fallback needed, unlike CoAP above). An rpc with the `shell` option
+ * false is left out of the tables above; with every rpc left out the
+ * hook is empty and the instance gets no `zlet` subcommand. */
 /* Text-format descriptors for every message in this proto carrying at least
  * one field. Defined once in {{ prefix }}_interface.c; declared here because
  * whatever references them -- a generated shell handler at the ZEPHLET_NEW()
@@ -113,7 +121,11 @@ PB_TF_DECLARE({{ m.lc }}_t);
 #if defined(CONFIG_ZEPHLETS_SHELL)
 #include "zephlet_shell_macros.h"
 
+{% if commands_shell %}
 #define _ZLET_SHELL_HOOK_{{ type_snake }}(_name) ZLET_SHELL_INSTANCE({{ type_snake }}, _name)
+{% else %}
+#define _ZLET_SHELL_HOOK_{{ type_snake }}(_name) /* empty: every rpc sets shell:false */
+{% endif %}
 #else
 #define _ZLET_SHELL_HOOK_{{ type_snake }}(_name) /* empty: CONFIG_ZEPHLETS_SHELL disabled */
 #endif

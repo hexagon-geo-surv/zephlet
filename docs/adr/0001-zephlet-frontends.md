@@ -130,6 +130,28 @@ has **no per-service proto opt-in**.
   unused: a `#define` table is not a function call, and nothing
   references it unless `ZLET_SHELL_INSTANCE` is invoked for that type.
 
+## Addendum: per-RPC `shell` option
+
+Shell still has no per-service opt-in, but an rpc can now leave the shell:
+`option (zephlet.shell) = false;` in its body, or `<Service>.<rpc> shell:false`
+in `<prefix>.zephlet.options` (an `fnmatch()` mask over the rpc names, as
+nanopb's `Message.field` lines are). The use is narrowing a console, not
+guarding a trust boundary — an rpc that is destructive, test-only or simply
+noisy at the prompt — so the argument above stands: the option hides, it does
+not secure, and the rpc stays reachable from C and every other frontend.
+
+- **Only the shell tables are filtered.** Codegen drops a hidden rpc from
+  `<TYPE>_SHELL_METHODS` and `_ZLET_SHELL_METHODS_APPLY_<type>`; method ids,
+  the dispatch table and `<prefix>_interface.c` are unchanged
+  (`test_shell_option_keeps_method_ids_and_other_outputs`).
+- **The paste prefix resolves among shown rpcs only**, so a response never
+  prints a command line the shell would reject.
+- **All hidden means no instance.** With every rpc hidden the hook expands to
+  nothing, rather than registering an instance with an empty subcommand set.
+- **Per-rpc keys are kept apart from service keys**: each is an error on the
+  other's kind of line, so a per-rpc `coap` or `lua` can be added later the
+  same way without changing what an existing line means.
+
 ## Alternatives considered
 
 - **Rewrite each zephlet for each transport.** Rejected: explodes

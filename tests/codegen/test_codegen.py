@@ -58,10 +58,14 @@ def _run_codegen(proto: Path, out_dir: Path, *, type_name: str = "tick",
 		capture_output=True)
 
 
+_TICK_RPCS = ("start", "stop", "get_status", "config", "get_config")
+
+
 def _options(codegen_module, fixture, service="TickApi"):
 	"""Read a fixture proto's zephlet options file."""
 	return codegen_module.read_zephlet_options(
-		codegen_module.options_path_for(str(_FIXTURES / fixture)), service)
+		codegen_module.options_path_for(str(_FIXTURES / fixture)), service,
+		_TICK_RPCS)
 
 
 def test_detect_opt_in_positive(codegen_module):
@@ -95,7 +99,7 @@ def test_options_file_comment_nesting(codegen_module, tmp_path, text, expected):
 	path.write_text(text)
 	opts = dict.fromkeys(("coap", "coap_discoverable", "lua"), False)
 	opts.update(expected)
-	assert codegen_module.read_zephlet_options(str(path), "TickApi") == opts
+	assert codegen_module.read_zephlet_options(str(path), "TickApi", _TICK_RPCS) == opts
 
 
 def test_options_file_error_line_after_block_comment(tmp_path):
@@ -117,7 +121,7 @@ def test_options_file_follows_nanopb_syntax(codegen_module, tmp_path):
 	`key: value` with a space, later lines win."""
 	path = tmp_path / "x.zephlet.options"
 	path.write_text("* coap:true lua:true\nTick* lua: false\n")
-	assert codegen_module.read_zephlet_options(str(path), "TickApi") == {
+	assert codegen_module.read_zephlet_options(str(path), "TickApi", _TICK_RPCS) == {
 		"coap": True, "coap_discoverable": False, "lua": False}
 
 
@@ -209,6 +213,12 @@ def test_proto_option_errors(tmp_path, option, needle):
 	result = _run_codegen_rc(_proto_with_options(tmp_path, option), tmp_path)
 	assert result.returncode != 0, result.stdout
 	assert needle in result.stderr, result.stderr
+
+
+def test_shell_option_on_the_service_points_at_the_rpc_body(tmp_path):
+	result = _run_codegen_rc(_proto_with_options(tmp_path, "shell = false"), tmp_path)
+	assert result.returncode != 0, result.stdout
+	assert "set (zephlet.shell) in an rpc body" in result.stderr, result.stderr
 
 
 def test_discoverable_needs_coap_in_either_place(tmp_path):
@@ -354,10 +364,11 @@ def test_discoverable_base_only_emits_instances_no_apis(tmp_path):
 	assert "ZEPHLET_COAP_HIDDEN" not in coap_c
 
 
-def test_shell_methods_emitted_for_every_rpc(tmp_path):
+def test_shell_methods_emitted_for_every_shown_rpc(tmp_path):
 	"""`<TYPE>_SHELL_METHODS(X)` / `_ZLET_SHELL_METHODS_APPLY_<type>(...)`
 	always render (no opt-in gate — shell exposure is per-app, not
-	per-proto), with one X() row per RPC in declaration order, the
+	per-proto), with one X() row per RPC not setting `shell` false
+	(see test_shell_option_*) in declaration order, the
 	uppercase _FIELDLIST macro name for Empty request/response
 	messages resolved to EMPTY (not the blank req_c_name), and the
 	correct 4-shape call_shape token, and the paste RPC each response
@@ -592,6 +603,147 @@ def test_shell_hook_chained_into_frontend_aggregator(tmp_path):
 	assert ("#define _ZLET_SHELL_HOOK_tick(_name) ZLET_SHELL_INSTANCE(tick, _name)"
 		in header)
 	assert "#define _ZLET_SHELL_HOOK_tick(_name) /* empty: CONFIG_ZEPHLETS_SHELL disabled */" in header
+
+
+def _shell_rows(header, type_upper="TICK"):
+	"""The rpc names of the `<TYPE>_SHELL_METHODS(X)` rows, in order."""
+	table = header.split(f"#define {type_upper}_SHELL_METHODS(X)", 1)[1]
+	table = table.split("/* Same rows", 1)[0]
+	return re.findall(r"^\tX\((\w+),", table, flags=re.MULTILINE)
+
+
+def _apply_rows(header, type_snake="tick"):
+	table = header.split(f"#define _ZLET_SHELL_METHODS_APPLY_{type_snake}(_instance, X)", 1)[1]
+	table = table.split("/* Per-type frontend aggregator", 1)[0]
+	return re.findall(rf"^\tX\({type_snake}, _instance, (\w+),", table, flags=re.MULTILINE)
+
+
+def _proto_with_rpc_options(tmp_path, rpc_options, file_text=None):
+	"""tick_no_opt.proto with, per rpc name in @p rpc_options, that rpc's
+	body holding the given `key = value` options; and an options file
+	holding @p file_text unless None."""
+	text = (_FIXTURES / "tick_no_opt.proto").read_text().replace(
+		'import "zephlet.proto";',
+		'import "zephlet.proto";\nimport "zephlet_options.proto";')
+	for rpc, options in rpc_options.items():
+		body = "".join(f" option (zephlet.{o.split('=')[0].strip()}) = "
+			       f"{o.split('=', 1)[1].strip()};" for o in options)
+		text, n = re.subn(rf"(rpc {rpc}\([^)]*\) returns \([^)]*\));",
+				  rf"\1 {{{body} }}", text)
+		assert n == 1, rpc
+	proto = tmp_path / "zlet_tick.proto"
+	proto.write_text(text)
+	if file_text is not None:
+		(tmp_path / "zlet_tick.zephlet.options").write_text(file_text)
+	return proto
+
+
+def test_shell_option_defaults_to_true(codegen_module):
+	ctx = codegen_module.parse_proto(str(_FIXTURES / "tick_no_opt.proto"))
+	assert [c["name"] for c in ctx["commands_shell"]] \
+		== [c["name"] for c in ctx["commands"]]
+
+
+def test_shell_option_hides_rpc_from_proto_and_file(tmp_path):
+	"""`option (zephlet.shell) = false;` in an rpc body and
+	`TickApi.config shell:false` in the options file each drop that rpc
+	from both shell tables, and nothing else."""
+	_run_codegen(_FIXTURES / "tick_shell_hidden.proto", tmp_path)
+	header = (tmp_path / "zlet_tick_interface.h").read_text()
+
+	assert _shell_rows(header) == ["start", "get_status", "get_config"]
+	assert _apply_rows(header) == ["start", "get_status", "get_config"]
+	assert ("#define _ZLET_SHELL_HOOK_tick(_name) ZLET_SHELL_INSTANCE(tick, _name)"
+		in header)
+
+
+def test_shell_option_never_pastes_a_hidden_rpc(tmp_path):
+	"""With config hidden, get_config's response has no shell command to
+	write it back, so its paste rpc is NULL rather than a dead command."""
+	_run_codegen(_FIXTURES / "tick_shell_hidden.proto", tmp_path)
+	header = (tmp_path / "zlet_tick_interface.h").read_text()
+
+	assert "X(get_config, empty, EMPTY, tick_config, TICK_CONFIG, EMPTY_RESP, NULL," in header
+
+
+def test_shell_option_keeps_method_ids_and_other_outputs(tmp_path):
+	"""Hiding an rpc from the shell renumbers nothing: `_interface.c` and
+	the method-id enum are the same as with every rpc shown."""
+	shown = tmp_path / "shown"
+	hidden = tmp_path / "hidden"
+	shown.mkdir()
+	hidden.mkdir()
+	_run_codegen(_FIXTURES / "tick_no_opt.proto", shown)
+	_run_codegen(_FIXTURES / "tick_shell_hidden.proto", hidden)
+
+	assert ((shown / "zlet_tick_interface.c").read_bytes()
+		== (hidden / "zlet_tick_interface.c").read_bytes())
+	enum = re.compile(r"enum tick_method_id \{.*?\};", re.DOTALL)
+	a = enum.search((shown / "zlet_tick_interface.h").read_text())
+	b = enum.search((hidden / "zlet_tick_interface.h").read_text())
+	assert a and b and a.group(0) == b.group(0)
+
+
+def test_shell_option_rpc_mask_is_fnmatch(codegen_module, tmp_path):
+	proto = _proto_with_rpc_options(tmp_path, {},
+					file_text="TickApi.get_* shell:false\n")
+	ctx = codegen_module.parse_proto(str(proto))
+	assert [c["name"] for c in ctx["commands_shell"]] == ["start", "stop", "config"]
+
+
+def test_shell_option_proto_overrides_file(codegen_module, tmp_path):
+	proto = _proto_with_rpc_options(tmp_path, {"config": ["shell = true"]},
+					file_text="TickApi.* shell:false\n")
+	ctx = codegen_module.parse_proto(str(proto))
+	assert [c["name"] for c in ctx["commands_shell"]] == ["config"]
+
+
+def test_shell_option_every_rpc_hidden_empties_the_hook(tmp_path):
+	"""With every rpc hidden the instance gets no `zlet` subcommand: the
+	hook is empty, and the tables have no rows."""
+	proto = _proto_with_rpc_options(tmp_path, {},
+					file_text="TickApi.* shell:false\n")
+	out = tmp_path / "out"
+	out.mkdir()
+	result = _run_codegen_rc(proto, out)
+	assert result.returncode == 0, result.stderr
+	header = (out / "zlet_tick_interface.h").read_text()
+
+	assert _shell_rows(header) == []
+	assert _apply_rows(header) == []
+	assert "ZLET_SHELL_INSTANCE(tick, _name)" not in header
+	assert ("#define _ZLET_SHELL_HOOK_tick(_name) /* empty: every rpc sets shell:false */"
+		in header)
+
+
+@pytest.mark.parametrize("line, needle", [
+	("TickApi.nope shell:false", "'nope' matches no rpc of TickApi"),
+	("UiApi.config shell:false", "'UiApi' matches no service"),
+	("TickApi.config lua:true", "unknown option 'lua:true'; known: shell; "
+	 "set lua on the service line"),
+	("TickApi shell:false", "unknown option 'shell:false'; known: coap, "
+	 "coap_discoverable, lua; set shell per rpc, `TickApi.<rpc> ...`"),
+	("TickApi.config shell:no", "shell: expected true or false"),
+])
+def test_shell_option_file_errors(tmp_path, line, needle):
+	proto = _proto_with_rpc_options(tmp_path, {}, file_text="# first\n" + line + "\n")
+	result = _run_codegen_rc(proto, tmp_path)
+
+	assert result.returncode != 0, result.stdout
+	assert "zlet_tick.zephlet.options:2: " in result.stderr, result.stderr
+	assert needle in result.stderr, result.stderr
+
+
+@pytest.mark.parametrize("option, needle", [
+	("lua = true", "known: (zephlet.shell); set (zephlet.lua) in the service body"),
+	('shell = "no"', "`option (zephlet.shell)` expects true or false"),
+])
+def test_shell_option_proto_errors(tmp_path, option, needle):
+	"""Only the rpc options are known in an rpc body, and they are bool."""
+	proto = _proto_with_rpc_options(tmp_path, {"config": [option]})
+	result = _run_codegen_rc(proto, tmp_path)
+	assert result.returncode != 0, result.stdout
+	assert needle in result.stderr, result.stderr
 
 
 def test_textformat_descriptors_emitted_per_message(tmp_path):

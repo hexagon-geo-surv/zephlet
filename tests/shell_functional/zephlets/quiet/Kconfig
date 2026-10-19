@@ -1,0 +1,17 @@
+config ZEPHLET_QUIET
+    bool "Quiet zephlet (shell functional test fixture)"
+    select NANOPB
+    select ZBUS
+    select ZBUS_ASYNC_LISTENER
+    help
+      Enable the `quiet` zephlet copy used by the shell functional test:
+      every one of its rpcs sets the `shell` option false, so its
+      instance (`quiet_main`) must get no `zlet` subcommand.
+
+if ZEPHLET_QUIET
+
+module = ZEPHLET_QUIET
+module-str = zlet_quiet
+source "subsys/logging/Kconfig.template.log_config"
+
+endif

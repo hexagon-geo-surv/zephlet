@@ -1,0 +1,26 @@
+syntax = "proto3";
+
+import "nanopb.proto";
+import "zephlet.proto";
+
+option (nanopb_fileopt).long_names = false;
+
+message Quiet {
+  message Config {
+    uint32 level = 1;
+  }
+
+  message Events {
+    int32 timestamp = 1;
+  }
+}
+
+/* Every rpc is hidden from the shell (zlet_quiet.zephlet.options), so its
+ * instance gets no `zlet` subcommand at all. */
+service QuietApi {
+  rpc start(Empty) returns (Lifecycle.Status);
+  rpc stop(Empty) returns (Lifecycle.Status);
+  rpc get_status(Empty) returns (Lifecycle.Status);
+  rpc config(Quiet.Config) returns (Quiet.Config);
+  rpc get_config(Empty) returns (Quiet.Config);
+}
