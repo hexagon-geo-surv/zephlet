@@ -152,14 +152,18 @@ def read_zephlet_options(path: str, service_name: str, method_names) -> dict:
 
         TickApi coap:true lua:true
 
-    The options are the ZEPHLET_OPTIONS keys, each `true` or `false`. A
-    pattern `<service>.<rpc>` instead sets the ZEPHLET_METHOD_OPTIONS keys of
-    every rpc in @p method_names its second half matches:
+    The options are the ZEPHLET_OPTIONS keys, each `true` or `false`, and
+    only those are returned. A pattern `<service>.<rpc>` sets the
+    ZEPHLET_METHOD_OPTIONS keys of the rpcs in @p method_names its second
+    half matches instead:
 
         TickApi.config shell:false
 
-    A line whose pattern matches no service or no rpc is an error, as is an
-    unknown option. A missing file sets nothing.
+    Such a line is still parsed and checked here, which is all @p
+    method_names is for, but its effect is not in the returned dict;
+    zephlet_options() returns the per-rpc options. A line whose pattern
+    matches no service or no rpc is an error, as is an unknown option. A
+    missing file sets nothing.
     """
     return _read_options_file(path, service_name, method_names)[0]
 

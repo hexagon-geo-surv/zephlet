@@ -31,7 +31,8 @@ enum {{ type_snake }}_method_id {
 /** Method dispatch table exposed via ZEPHLET_NEW({{ type_snake }}, ...). */
 extern const struct zephlet_api {{ type_snake }}_api;
 
-/* Shell-frontend method table. One row per RPC, in declaration order:
+/* Shell-frontend method table. One row per RPC whose `shell` option is
+ * left at its default true, in declaration order among those:
  * (name, req struct name, req _FIELDLIST macro name, resp struct name,
  * resp _FIELDLIST macro name, call shape, paste rpc) — nanopb's own generated
  * names, so the shell macro framework (frontends/shell/) can walk each
@@ -40,9 +41,10 @@ extern const struct zephlet_api {{ type_snake }}_api;
  * used instead. `call shape` is one of EMPTY_EMPTY/EMPTY_RESP/REQ_EMPTY/
  * REQ_RESP, decided here (codegen already knows req/resp_is_empty) so
  * the shell macros never infer it from a name match. `paste rpc` names
- * the RPC that accepts this one's response as its request, so a response
- * can print the command line that writes it back; NULL when no RPC takes
- * that type. `help` is the request rendered as a text-format template
+ * the first shown RPC that accepts this one's response as its request, so
+ * a response can print the command line that writes it back; NULL when no
+ * shown RPC takes that type, including when every RPC that takes it is
+ * hidden. `help` is the request rendered as a text-format template
  * for the shell's subcommand listing -- or, for an RPC that takes no
  * request, its response prefixed `->`.
  *

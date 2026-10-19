@@ -158,11 +158,13 @@ TickApi.get_* shell:false
 | `shell` | Register the rpc as a `zlet <instance> <rpc>` subcommand. Default `true`. |
 
 `shell:false` hides the rpc from the shell only: it keeps its method id and
-stays callable from C, CoAP and Lua. A response whose writer is hidden prints
-without the pasteable command line, and an instance whose rpcs are all hidden
-(`TickApi.* shell:false`) gets no `zlet` subcommand. The proto again overrides
-the file. A service option on a `<service>.<rpc>` line, `shell` on a bare
-service line, or an rpc pattern that matches no rpc stops the build.
+stays callable from C, CoAP and Lua. A response's pasteable command line names
+the first shown rpc that takes its type as a request, and is left out when no
+shown rpc does (hiding `config` leaves `get_config` without one); an instance
+whose rpcs are all hidden (`TickApi.* shell:false`) gets no `zlet` subcommand.
+The proto again overrides the file. A service option on a `<service>.<rpc>`
+line, `shell` on a bare service line, or an rpc pattern that matches no rpc
+stops the build.
 
 ## Adapters
 
