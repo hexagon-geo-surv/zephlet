@@ -132,6 +132,38 @@ option, a value other than `true` or `false`, or an options file line whose
 pattern matches no service stops the build, with the file and line for the
 options file.
 
+### Per-RPC options
+
+One option is set on an rpc rather than on the service: in the rpc's body, or
+on an options file line whose pattern is `<service>.<rpc>`, the rpc half an
+`fnmatch()` mask over the rpc names.
+
+```proto
+service TickApi {
+  rpc config(Tick.Config) returns (Tick.Config) {
+    option (zephlet.shell) = false;
+  }
+  ...
+}
+```
+
+```
+# zlet_tick.zephlet.options
+TickApi.config shell:false
+TickApi.get_* shell:false
+```
+
+| Option | Effect |
+|---|---|
+| `shell` | Register the rpc as a `zlet <instance> <rpc>` subcommand. Default `true`. |
+
+`shell:false` hides the rpc from the shell only: it keeps its method id and
+stays callable from C, CoAP and Lua. A response whose writer is hidden prints
+without the pasteable command line, and an instance whose rpcs are all hidden
+(`TickApi.* shell:false`) gets no `zlet` subcommand. The proto again overrides
+the file. A service option on a `<service>.<rpc>` line, `shell` on a bare
+service line, or an rpc pattern that matches no rpc stops the build.
+
 ## Adapters
 
 Not a framework concept in v0.3. An "adapter" is plain user code — usually a single `.c` file composed from the `ZEPHLET_EVENTS_LISTENER` primitive:
@@ -194,7 +226,7 @@ Public surface (see [`zephlet_coord.h`](zephlet_coord.h)):
 ## Shell frontend
 
 `CONFIG_ZEPHLETS_SHELL=y` puts every instance's RPCs under one `zlet` root
-command. No app code: `ZEPHLET_NEW(...)` already expands the per-type hook that
+command, except those an rpc's [`shell`](#per-rpc-options) option hides. No app code: `ZEPHLET_NEW(...)` already expands the per-type hook that
 registers them. Needs the library in your manifest — see [Dependencies](#dependencies).
 
 An RPC takes its request as a protobuf **text-format** message:

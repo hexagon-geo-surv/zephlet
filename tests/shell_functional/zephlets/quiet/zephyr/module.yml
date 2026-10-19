@@ -1,0 +1,4 @@
+name: zlet_quiet
+build:
+  cmake: .
+  kconfig: Kconfig

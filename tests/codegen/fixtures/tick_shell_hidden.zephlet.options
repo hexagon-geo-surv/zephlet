@@ -1,0 +1,2 @@
+# Hides the setter: get_config's response then has nothing to paste back.
+TickApi.config shell:false

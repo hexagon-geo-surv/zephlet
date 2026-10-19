@@ -1,6 +1,7 @@
 #include <zephyr/kernel.h>
 #include <zephyr/logging/log.h>
 
+#include "zlet_quiet.h"
 #include "zlet_tick.h"
 #include "zlet_typelab.h"
 #include "zlet_ui.h"
@@ -28,6 +29,9 @@ LOG_MODULE_REGISTER(zlet_shell_functional, LOG_LEVEL_INF);
  * pair. Between them every shell parse/print path is exercised through a
  * real `zlet typelab_bench ...` command, not just the couple of scalar
  * types tick/ui happen to use.
+ *
+ * `quiet_main` sets the `shell` option false on every rpc, so it is the
+ * one instance with no `zlet` subcommand; `ui_main` hides two of its own.
  */
 
 static struct tick_config tick_fast_cfg = {
@@ -55,6 +59,10 @@ ZEPHLET_NEW(ui, ui_main, &ui_main_cfg, &ui_main_data, ui_init_fn);
 static struct typelab_config typelab_bench_cfg;
 static struct typelab_data typelab_bench_data;
 ZEPHLET_NEW(typelab, typelab_bench, &typelab_bench_cfg, &typelab_bench_data, typelab_init_fn);
+
+static struct quiet_config quiet_main_cfg;
+static struct quiet_data quiet_main_data;
+ZEPHLET_NEW(quiet, quiet_main, &quiet_main_cfg, &quiet_main_data, quiet_init_fn);
 
 int main(void)
 {

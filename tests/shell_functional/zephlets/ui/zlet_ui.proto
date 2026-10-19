@@ -2,6 +2,7 @@ syntax = "proto3";
 
 import "nanopb.proto";
 import "zephlet.proto";
+import "zephlet_options.proto";
 
 option (nanopb_fileopt).long_names = false;
 
@@ -21,4 +22,10 @@ service UiApi {
   rpc get_status(Empty) returns (Lifecycle.Status);
   rpc config(Ui.Config) returns (Ui.Config);
   rpc get_config(Empty) returns (Ui.Config);
+  /* Hidden from the shell, one from each place the option can be set: in
+   * the rpc body here, and in zlet_ui.zephlet.options. */
+  rpc hidden_by_proto(Empty) returns (Empty) {
+    option (zephlet.shell) = false;
+  }
+  rpc hidden_by_file(Empty) returns (Empty);
 }

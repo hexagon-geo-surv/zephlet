@@ -13,8 +13,9 @@ import "google/protobuf/descriptor.proto";
  * parses the .proto.
  *
  * The same options can instead be set in `<prefix>.zephlet.options` beside
- * the proto (`TickApi coap:true`), which keeps the proto free of this
- * import. An option set here overrides that file, as in nanopb.
+ * the proto (`TickApi coap:true`, or `TickApi.config shell:false` for an
+ * rpc), which keeps the proto free of this import. An option set here
+ * overrides that file, as in nanopb.
  */
 
 extend google.protobuf.ServiceOptions {
@@ -38,4 +39,15 @@ extend google.protobuf.ServiceOptions {
    * frontend adds no code or RAM for them.
    */
   bool lua = 50003;
+}
+
+extend google.protobuf.MethodOptions {
+  /*
+   * Register this rpc as a `zlet <instance> <rpc>` subcommand of the shell
+   * frontend (CONFIG_ZEPHLETS_SHELL). Default true; false hides it from the
+   * shell only: it keeps its method id and stays callable from C and from
+   * every other frontend. An instance whose rpcs are all hidden gets no
+   * `zlet` subcommand at all.
+   */
+  bool shell = 50004;
 }

@@ -11,6 +11,7 @@ list(APPEND EXTRA_ZEPHYR_MODULES
     "${CMAKE_CURRENT_SOURCE_DIR}/zephlets/tick"
     "${CMAKE_CURRENT_SOURCE_DIR}/zephlets/ui"
     "${CMAKE_CURRENT_SOURCE_DIR}/zephlets/typelab"
+    "${CMAKE_CURRENT_SOURCE_DIR}/zephlets/quiet"
 )
 
 find_package(Zephyr REQUIRED HINTS $ENV{ZEPHYR_BASE})
